@@ -84,6 +84,13 @@ Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. Print `base.st
 `base_across.stl` (box across a vertical upright) / `base_along.stl` (ears at the ends) for other mounts.
 The box does not have to be square to the rig: use **Auto-align** (below).
 
+![render](docs/enclosure_render.png)
+
+![bolts](docs/enclosure_render_bolts.png)
+
+(Photo renders: `enclosure/render/render.sh` — OpenSCAD scene with DIN 912 M6 × 16 black-oxide bolts, DIN 125 washers,
+slot-8 drop-in T-nuts, ISO 7380 M3 lid screws and a USB-C lead, rendered in Blender Cycles.)
+
 ![mounting](docs/enclosure_mounting.png)
 
 **Lid print (Prusa MK3.5S + MMU3):** load `lid.stl` and the three `lid_inlay_*.stl` together as one multi-part

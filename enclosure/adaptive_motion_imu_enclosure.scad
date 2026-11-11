@@ -349,6 +349,7 @@ else if (part == "fit") {                          // boards installed, lid off
     color("SteelBlue") base();
     boards(); wires();
 }
+else if (part == "none") { }                        // library use (render/render_scene.scad)
 else if (part == "lid_preview") {                  // lid as installed, with coloured inlays
     color("#2B302C") lid(); inlay_coloured();
 }

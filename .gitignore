@@ -6,3 +6,4 @@ obj/
 *.user
 enclosure/build/
 firmware/host_test/host_test
+enclosure/render/build/
