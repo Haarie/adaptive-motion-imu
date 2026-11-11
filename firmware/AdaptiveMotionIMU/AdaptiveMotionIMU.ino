@@ -1,8 +1,9 @@
 /*
   AdaptiveMotionIMU — rig-mounted IMU for the SimHub "Adaptive Motion" plugin
   -----------------------------------------------------------------------------
-  Target   : Arduino Micro (ATmega32U4, native USB). Also builds for Pro Micro 5V
-             and, with one define, for Nano (ATmega328P) — see BOARD NOTES below.
+  Target   : "ProMicro NRF52840" (nice!nano v2 clone, nRF52840, USB-C, 3.3 V logic),
+             built with the ArduinoNRF core, board "AliExpress ProMicro nRF52840".
+             Still builds for Arduino Micro / Pro Micro (ATmega32U4) and Nano.
   Sensor   : MPU-6050 (GY-521 breakout) on I2C @ 400 kHz.
   Output   : framed binary packets over USB CDC (see PROTOCOL.md), 250 Hz default.
 
@@ -12,9 +13,13 @@
              -> per-window stats (mean accel/gyro, peak |a|-1g, high-pass vibration RMS)
              -> frame every OUT_DIV samples, CRC-8.
 
-  No external libraries: register-level driver, only Wire/EEPROM/avr wdt.
+  No external libraries: register-level driver, only Wire/EEPROM/watchdog.
 
   BOARD NOTES
+    ProMicro nRF52840 : SDA = pad "1.00" (D6), SCL = pad "0.11" (D7) — the core's
+                        default, hardware-verified I2C pins. GY-521 VCC -> board "VCC"
+                        (3.3 V, switched by P0.13; the firmware switches it on and
+                        auto-detects the polarity). No level shifter: all 3.3 V.
     Micro / Pro Micro : SDA = D2, SCL = D3, MPU INT -> D7 (optional, polled anyway).
     Nano              : SDA = A4, SCL = A5, MPU INT -> D2.
     GY-521 pull-ups go to its own 3.3 V LDO. A 5 V AVR reads that as HIGH in practice
@@ -26,13 +31,71 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+// Arduino.h on some cores defines min/max as macros, which breaks <cmath>.
+#pragma push_macro("min")
+#pragma push_macro("max")
+#undef min
+#undef max
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#pragma pop_macro("max")
+#pragma pop_macro("min")
 #include <EEPROM.h>
-#include <avr/wdt.h>
+
+// ----------------------------------------------------------------------------
+// Platform layer: watchdog, persistent storage, reboot, sensor power
+// ----------------------------------------------------------------------------
+#if defined(ARDUINO_ARCH_AVR)
+  #include <avr/wdt.h>
+  static inline void wdtStart() { wdt_enable(WDTO_250MS); }
+  static inline void wdtFeed()  { wdt_reset(); }
+  static inline void wdtBoot()  { MCUSR = 0; wdt_disable(); }
+  static inline void hwReboot() { wdt_enable(WDTO_15MS); for (;;) {} }
+  static inline void storeBegin() {}
+  static inline void storeCommit() {}
+  static inline bool hostPresent() {
+  #if defined(USBCON)
+    return (bool)Serial;            // DTR asserted by the host
+  #else
+    return true;
+  #endif
+  }
+  static inline void sensorPowerOn(uint8_t) {}
+  #define HAS_SENSOR_POWER 0
+#elif defined(NRF52_SERIES) || defined(ARDUINO_ARCH_NRF52)
+  #include <Watchdog.h>
+  // The nRF52 WDT cannot be stopped once started. 1 s covers a flash page erase
+  // (~85 ms) during a settings save with lots of margin.
+  static inline void wdtStart() { Watchdog.begin(1000); }
+  static inline void wdtFeed()  { Watchdog.feed(); }
+  static inline void wdtBoot()  { if (Watchdog.running()) Watchdog.feed(); }
+  static inline void hwReboot() {
+    delay(20);
+    __asm volatile ("dsb 0xF" ::: "memory");
+    *(volatile uint32_t *)0xE000ED0CUL = 0x05FA0004UL;   // SCB->AIRCR = SYSRESETREQ
+    __asm volatile ("dsb 0xF" ::: "memory");
+    for (;;) {}
+  }
+  static inline void storeBegin()  { EEPROM.begin(); }   // flash-emulated EEPROM
+  static inline void storeCommit() { EEPROM.commit(); }
+  static inline bool hostPresent() { return Serial.dtr(); }
+  // Board pin "VCC" is switched by P0.13. Clones differ in polarity, so mpuInit()
+  // tries both levels and keeps the one where the MPU answers.
+  static inline void sensorPowerOn(uint8_t level) {
+    pinMode(PIN_EXT_VCC, OUTPUT);
+    digitalWrite(PIN_EXT_VCC, level);
+  }
+  #define HAS_SENSOR_POWER 1
+#else
+  #error "Unsupported board: use the ArduinoNRF core (ProMicro nRF52840) or an AVR board"
+#endif
 
 // ----------------------------------------------------------------------------
 // Build configuration
 // ----------------------------------------------------------------------------
-#define FW_VERSION        "1.1.0"
+#define FW_VERSION        "1.2.0"
 #define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
 #define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
 #define SAMPLE_HZ         500         // internal fusion rate
@@ -179,6 +242,7 @@ static void persistLoad() {
 static void persistSave() {
   P.crc = crc8((const uint8_t *)&P, sizeof(P) - 1);
   EEPROM.put(0, P);
+  storeCommit();
 }
 
 // ----------------------------------------------------------------------------
@@ -199,16 +263,42 @@ static bool rd(uint8_t reg, uint8_t *buf, uint8_t n) {
   return true;
 }
 
-static bool mpuInit() {
+#if HAS_SENSOR_POWER
+static uint8_t vccOnLevel = HIGH;      // nice!nano v2: HIGH = VCC on; some clones invert
+static bool    vccLevelKnown = false;
+#endif
+
+static void wireStart() {
   Wire.begin();
   Wire.setClock(400000);
-#if defined(WIRE_HAS_TIMEOUT)
+#if defined(WIRE_HAS_TIMEOUT) || defined(NRF52_SERIES) || defined(ARDUINO_ARCH_NRF52)
   Wire.setWireTimeout(3000 /*us*/, true);   // never hang the loop on a glitched bus
 #endif
-  if (!rd(R_WHO_AM_I, &whoAmI, 1)) return false;
+}
+
+static bool mpuProbe() {
+#if HAS_SENSOR_POWER
+  if (vccLevelKnown) { sensorPowerOn(vccOnLevel); return rd(R_WHO_AM_I, &whoAmI, 1); }
+  for (uint8_t attempt = 0; attempt < 2; attempt++) {
+    uint8_t lvl = attempt ? (uint8_t)!vccOnLevel : vccOnLevel;
+    sensorPowerOn(lvl);
+    delay(60);                          // GY-521 LDO + MPU power-up
+    wdtFeed();
+    if (rd(R_WHO_AM_I, &whoAmI, 1)) { vccOnLevel = lvl; vccLevelKnown = true; return true; }
+  }
+  sensorPowerOn(vccOnLevel);
+  return false;
+#else
+  return rd(R_WHO_AM_I, &whoAmI, 1);
+#endif
+}
+
+static bool mpuInit() {
+  wireStart();
+  if (!mpuProbe()) return false;
   if (!wr(R_PWR_MGMT_1, 0x80)) return false;  // device reset
   delay(100);
-  wdt_reset();
+  wdtFeed();
   bool ok = wr(R_PWR_MGMT_1, 0x01)              // wake, PLL with X gyro ref
          && wr(R_CONFIG, P.dlpf & 0x07)         // DLPF -> 1 kHz internal rate
          && wr(R_SMPLRT_DIV, (1000 / SAMPLE_HZ) - 1)
@@ -456,7 +546,7 @@ static void gyroCal() {
     float m = fabsf(gx) + fabsf(gy) + fabsf(gz);
     if (m > mx) mx = m;
     delayMicroseconds(1800);
-    if ((i & 63) == 0) wdt_reset();
+    if ((i & 63) == 0) wdtFeed();
   }
   if (mx > 0.35f) {   // > ~20 deg/s summed: something moved
     memcpy(P.gbias, old, sizeof(old));
@@ -496,7 +586,7 @@ static void handleCmd(char *c) {
   }
   else if (!strncmp(c, "STREAM ", 7)) { streaming = c[7] == '1'; sendText("OK STREAM"); }
   else if (!strcmp(c, "DEFAULTS")) { persistDefaults(); persistSave(); i2cOk = mpuInit(); sendText("OK DEFAULTS"); }
-  else if (!strcmp(c, "REBOOT")) { sendText("OK REBOOT"); Serial.flush(); wdt_enable(WDTO_15MS); for (;;) {} }
+  else if (!strcmp(c, "REBOOT")) { sendText("OK REBOOT"); Serial.flush(); hwReboot(); }
   else if (!strncmp(c, "AUTOCAL ", 8)) { P.autoCal = c[8] == '1'; persistSave(); sendText(P.autoCal ? "OK AUTOCAL 1" : "OK AUTOCAL 0"); }
   else if (!strcmp(c, "BIAS")) {
     // bias in 0.001 deg/s, plus how many still windows updated it since boot
@@ -521,10 +611,10 @@ static void pollSerial() {
 
 // ----------------------------------------------------------------------------
 void setup() {
-  MCUSR = 0;
-  wdt_disable();
+  wdtBoot();
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(SERIAL_BAUD);
+  storeBegin();
   persistLoad();
 
   float dt = 1.0f / SAMPLE_HZ;
@@ -538,22 +628,18 @@ void setup() {
     delay(50);
     if (readRaw(ax, ay, az, gx, gy, gz, s)) seedFromAccel(ax, ay, az);
   }
-  wdt_enable(WDTO_250MS);
+  wdtStart();
   nextSampleUs = micros();
 }
 
 void loop() {
-  wdt_reset();
+  wdtFeed();
   uint32_t nowMs = millis();
 
   // Host presence (DTR) — checking Serial costs ~10 ms on some cores, so only 2x/s
   if (nowMs - lastHostCheckMs > 500) {
     lastHostCheckMs = nowMs;
-#if defined(USBCON)
-    hostOpen = (bool)Serial;
-#else
-    hostOpen = true;
-#endif
+    hostOpen = hostPresent();
     digitalWrite(LED_PIN, i2cOk ? (hostOpen ? HIGH : (nowMs / 250) & 1) : (nowMs / 60) & 1);
   }
 

@@ -1,8 +1,8 @@
 # AdaptiveMotionIMU serial protocol v1
 
-Transport: USB CDC (Arduino Micro: baud rate ignored; Nano: 1 000 000 baud, 8N1).
-The host **must assert DTR** (`SerialPort.DtrEnable = true`); the ATmega32U4 only streams while DTR is high.
-Opening the port at **1200 baud** resets a 32U4 into its bootloader, so never use 1200.
+Transport: USB CDC (ProMicro nRF52840 / Arduino Micro: baud rate ignored; Nano: 1 000 000 baud, 8N1).
+The host **must assert DTR** (`SerialPort.DtrEnable = true`); the firmware only reports "host open" while DTR is high.
+Never open the port at **1200 baud**: that is the "reset into bootloader" touch on many native-USB boards.
 
 ## Frame (device → host), little-endian
 

@@ -1,26 +1,27 @@
 # Builds docs/enclosure_fit.png. Run from enclosure/ after rendering:
 #   mkdir -p build
-#   openscad -D part=\"exploded\" --imgsize=1600,1000 --camera=50,14,25,62,0,32,250 --colorscheme=Tomorrow -o build/exploded.png adaptive_motion_imu_enclosure.scad
-#   openscad -D part=\"fit\" --imgsize=1600,700 --camera=49,14,0,0,0,0,170 --projection=o --colorscheme=Tomorrow -o build/top.png adaptive_motion_imu_enclosure.scad
+#   openscad -D part=\"exploded\" --imgsize=1600,1000 --camera=34,14,30,62,0,32,215 --colorscheme=Tomorrow -o build/exploded.png adaptive_motion_imu_enclosure.scad
+#   openscad -D part=\"fit\" --imgsize=1600,800 --camera=34.15,10,0,0,0,0,125 --projection=o --colorscheme=Tomorrow -o build/top.png adaptive_motion_imu_enclosure.scad
 #   python3 fit_figure.py
 from PIL import Image, ImageDraw, ImageFont
 F="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; FB="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 f=lambda s,b=False: ImageFont.truetype(FB if b else F, s)
 ex=Image.open("build/exploded.png").convert("RGB"); top=Image.open("build/top.png").convert("RGB")
 W=1600
-def px(x,y): return (807+(x-49.25)*9.97, 402-(y-13.7)*9.97)
+CX,CY,DIST=34.15,10.0,125.0
+S=9.97*170/DIST                      # px per mm for the orthographic top view
+def px(x,y): return (top.width/2+(x-CX)*S, top.height/2-(y-CY)*S)
 ink=(40,44,52); acc=(230,120,20)
 # --- annotate top view ---------------------------------------------------------------
 d=ImageDraw.Draw(top)
 calls=[ # n, target mm, label px
- (1,(27.8,13.7),(450,72)),
- (2,(3.6,13.7),(150,72)),
- (3,(67,13.7),(1110,72)),
- (4,(87.7,13.7),(1400,72)),
- (5,(19.7,-3.0),(420,760)),
- (6,(33.25,-11.0),(1050,760)),
- (7,(-3.0,6.3),(200,760)),
- (8,(73,4.0),(1350,760)),
+ (1,(22.0,15.5),(640,75)),
+ (2,(3.0,13.8),(150,75)),
+ (3,(52.0,17.0),(1250,75)),
+ (4,(40.5,8.6),(1400,330)),
+ (5,(10.0,33.0),(300,75)),
+ (6,(34.15,-11.0),(980,760)),
+ (7,(-3.0,6.3),(80,520)),
 ]
 for n,t,(lx,ly) in calls:
     tx,ty=px(*t)
@@ -31,14 +32,13 @@ for n,t,(lx,ly) in calls:
 # --- compose ---------------------------------------------------------------------------
 exs=ex.resize((1440,900)).crop((0,20,1440,880))
 legend=[
- "1  Arduino Micro: sits on two edge ledges between rails, pinned by two ribs under the lid",
- "2  Micro-USB socket against the -X end wall; the plug goes in through the wall cutout",
+ "1  ProMicro nRF52840 (USB-C): sits on two edge ledges between rails, pinned by two ribs under the lid",
+ "2  USB-C socket against the -X end wall; the plug goes in through the 13 x 8 mm wall cutout",
  "3  GY-521 (MPU-6050): two M2.5 x 6 screws into the bosses, header edge on the support bar",
- "4  BSS138 level shifter: stuck in its bay with VHB tape",
+ "4  Four wires, board straight to GY-521 (no level shifter, all 3.3 V): VCC, GND, SDA, SCL",
  "5  Lid: 4 x M3 screws into heat-set inserts in the outside lugs",
  "6  Side flange: 2 x M6 slots, 32 mm apart (+-3 mm play), both in the horizontal slot of the beam",
  "7  Cable-tie slots: USB strain relief on the flat tab",
- "8  Wires (5V, 3V3, GND, SDA, SCL) under 10 cm, twisted pairs, soldered - see the wiring sheet",
 ]
 H=110+exs.height+60+top.height+40+len(legend)*34+30
 out=Image.new("RGB",(W,H),(248,248,248)); D=ImageDraw.Draw(out)

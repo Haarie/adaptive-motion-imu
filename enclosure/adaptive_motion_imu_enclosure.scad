@@ -1,4 +1,5 @@
-// AdaptiveMotionIMU enclosure — Arduino Micro (headerless) + GY-521 (MPU-6050)
+// AdaptiveMotionIMU enclosure — ProMicro nRF52840 (nice!nano clone, USB-C, headerless) + GY-521 (MPU-6050)
+// (board = "micro" still gives the original Arduino Micro + level-shifter layout)
 // Rigid two-part box that bolts to aluminium extrusion with two M6 bolts + T-nuts (30/40 series, slot 8).
 // Default "side": on the vertical side face of a horizontal cross-member, both bolts in its horizontal slot.
 // Design rule: the sensor must move EXACTLY like the seat. So: thick floor, sensor screwed to
@@ -12,14 +13,19 @@
 //
 // MEASURE YOUR BOARDS WITH CALIPERS and adjust the "board" section — clone boards vary ±0.5 mm.
 
-part = "assembly";      // base | lid | inlay | assembly | fit | exploded
+part = "assembly";      // base | lid | inlay | assembly | fit | exploded | mounted
+board = "nrf52840";     // nrf52840 (ProMicro nRF52840, 3.3 V, USB-C) | micro (Arduino Micro, 5 V, micro-USB)
 $fn = 48;
 
 // ---------------- boards ------------------------------------------------------------------
-micro_l = 48.3;  micro_w = 17.8;  micro_t = 1.6;     // Arduino Micro PCB
-micro_under = 2.6;      // tallest part on the underside (headerless board: reset/ICSP pads)
-micro_over  = 4.2;      // tallest part on top (USB receptacle / crystal)
-usb_w = 8.0;  usb_h = 3.2;  usb_overhang = 0.8;      // micro-B receptacle, sticks out past PCB edge
+is_nrf = board == "nrf52840";
+// "micro_*" = the controller board, whichever it is
+micro_l = is_nrf ? 33.3 : 48.3;  micro_w = is_nrf ? 18.0 : 17.8;  micro_t = 1.6;
+micro_under = 2.6;      // clearance under the PCB (headerless: only pads underneath)
+micro_over  = 4.2;      // tallest part on top (USB receptacle)
+usb_w = is_nrf ? 9.0 : 8.0;  usb_h = is_nrf ? 3.3 : 3.2;  usb_overhang = is_nrf ? 1.0 : 0.8;  // USB-C / micro-B receptacle
+usb_cut_w = is_nrf ? 13.0 : 11.0;   usb_cut_h = is_nrf ? 8.0 : usb_h + 4.5;   // room for the plug overmould
+use_shifter = !is_nrf;  // 3.3 V board: no level shifter needed
 
 gy_l = 21.2;  gy_w = 16.0;  gy_t = 1.6;              // GY-521 PCB
 gy_hole_d = 3.2;  gy_hole_pitch = 15.5;  gy_hole_inset = 2.6;   // two holes along one long edge
@@ -37,8 +43,8 @@ lug_d = 8.0;            // external lugs for the lid screws (keeps the cavity fr
 insert_d = 4.0;  insert_depth = 5.0;   // M3 x 5.7 heat-set insert hole (check your inserts)
 lid_screw_d = 3.4;  lid_head_d = 6.2;  lid_head_h = 1.6;
 
-inner_l = usb_overhang + 0.6 + micro_l + gap + 4 + gy_l + 3 + shifter_l + gap + 1;
-inner_w = max(micro_w, gy_w, shifter_w) + 2 * gap + 4.0;
+inner_l = usb_overhang + 0.6 + micro_l + gap + 4 + gy_l + 3 + (use_shifter ? shifter_l + gap + 1 : 0);
+inner_w = max(micro_w, gy_w, use_shifter ? shifter_w : 0) + 2 * gap + 4.0;
 inner_h = micro_under + micro_t + micro_over + 3.0;
 outer_l = inner_l + 2 * wall;
 outer_w = inner_w + 2 * wall;
@@ -86,12 +92,13 @@ label = mount_style == "side" ? "up" : "fwd";
 module text_label(depth) {
     if (label == "up") {
         // arrow pointing +Y (away from the mounting flange = up when the box sits above the slot)
-        translate([outer_l / 2 + 8, outer_w / 2, 0]) linear_extrude(depth)
+        short = outer_l < 85;   // compact nRF52840 box: tighter layout
+        translate([outer_l / 2 + (short ? -6 : 8), outer_w / 2, 0]) linear_extrude(depth)
             rotate(90) translate([-10.5, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
-        translate([outer_l / 2 - 10, outer_w / 2, 0]) linear_extrude(depth)
+        translate([outer_l / 2 + (short ? -17 : -10), outer_w / 2, 0]) linear_extrude(depth)
             text("UP", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
-        translate([outer_l / 2 + 30, outer_w / 2, 0]) linear_extrude(depth)
-            text("LID = FRONT", size = 3.2, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
+        translate([outer_l / 2 + (short ? 16 : 30), outer_w / 2, 0]) linear_extrude(depth)
+            text("LID = FRONT", size = short ? 2.6 : 3.2, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
     } else {
         // arrow + text pointing to rig front (+X of the box)
         translate([outer_l / 2 - 4, outer_w / 2, 0]) linear_extrude(depth) {
@@ -155,8 +162,9 @@ module base() {
             for (y = [-bolt_off, outer_w + bolt_off]) translate([outer_l / 2, y, -1])
                 hull() for (dy = [-bolt_slot / 2, bolt_slot / 2]) translate([0, dy, 0]) cylinder(d = bolt_d, h = plate_t + 10);
         }
-        // USB opening in the -X wall, centred on the Micro's receptacle (room for the plug overmould)
-        translate([-1, wall + micro_y0 + micro_w / 2 - 5.5, floor_t + micro_z0 + micro_t - 2.0]) cube([wall + 2, 11, usb_h + 4.5]);
+        // USB opening in the -X wall, centred on the board's receptacle (room for the plug overmould)
+        translate([-1, wall + micro_y0 + micro_w / 2 - usb_cut_w / 2, floor_t + micro_z0 + micro_t + usb_h / 2 - usb_cut_h / 2])
+            cube([wall + 2, usb_cut_w, usb_cut_h]);
         // heat-set insert holes in the lugs
         for (p = lug_xy()) translate([p[0], p[1], base_h - insert_depth]) cylinder(d = insert_d, h = insert_depth + 1);
         // two cable-tie slots through the -X ear for USB strain relief
@@ -175,8 +183,8 @@ module base() {
         for (i = [0, 1]) translate([gy_x0 + (gy_l - gy_hole_pitch) / 2 + i * gy_hole_pitch, gy_y0 + gy_w - gy_hole_inset, 0])
             difference() { cylinder(d = 5.2, h = gy_standoff); translate([0, 0, -0.1]) cylinder(d = gy_screw_pilot, h = gy_standoff + 1); }
         translate([gy_x0 + 3, gy_y0 + 1.0, 0]) cube([gy_l - 6, 2.0, gy_standoff]);
-        // level-shifter bay: low fence, board fixed with VHB tape
-        translate([sh_x0, sh_y0, 0]) difference() {
+        // level-shifter bay (5 V Arduino Micro only): low fence, board fixed with VHB tape
+        if (use_shifter) translate([sh_x0, sh_y0, 0]) difference() {
             translate([-1.2, -1.2, 0]) cube([shifter_l + 2.4, shifter_w + 2.4, 1.5]);
             cube([shifter_l, shifter_w, 3]);
         }
@@ -219,7 +227,18 @@ module lid() {
 module inlay() { translate([0, 0, lid_t - 0.6]) text_label(0.6); }
 
 // ---------------- visual board models (for the fit pictures only, not printed) ------------
-module micro_model() {                       // origin = PCB corner, PCB bottom at z = 0
+// ProMicro pad order from the USB end. -Y edge ("left"): 0.06 0.08 GND GND 0.17 0.20 0.22 0.24 1.00 0.11 1.04 1.06
+//                                       +Y edge ("right"): B+ GND RST VCC 0.31 0.29 0.02 1.15 1.13 1.11 0.10 0.09
+function pad_x(i) = is_nrf ? (micro_l - 11 * 2.54) / 2 + i * 2.54 : 2.2 + i * 2.54;
+module micro_model() { if (is_nrf) nrf_model(); else avr_micro_model(); }
+module nrf_model() {                         // origin = PCB corner, PCB bottom at z = 0
+    color("DimGray") cube([micro_l, micro_w, micro_t]);
+    color("Black") translate([micro_l * 0.55, micro_w / 2, micro_t]) rotate([0, 0, 45]) translate([-3.5, -3.5, 0]) cube([7, 7, 0.9]);  // nRF52840
+    color("Silver") translate([-usb_overhang, micro_w / 2 - usb_w / 2, micro_t]) cube([7.3, usb_w, usb_h]);   // USB-C
+    for (i = [0 : 11], y = [0.9, micro_w - 0.9])                                                   // 2 x 12 pads
+        color("Gold") translate([pad_x(i), y, micro_t]) cylinder(d = 1.6, h = 0.1);
+}
+module avr_micro_model() {
     color("Teal") cube([micro_l, micro_w, micro_t]);
     color("Black") translate([micro_l * 0.45, micro_w / 2 - 3.5, micro_t]) cube([7, 7, 1]);          // ATmega32U4
     color("Silver") translate([-usb_overhang, micro_w / 2 - usb_w / 2, micro_t]) cube([5.7, usb_w, 2.8]);  // micro-USB
@@ -249,7 +268,7 @@ S0 = [wall + sh_x0, wall + sh_y0, floor_t + 1.0];
 module boards(dz = 0) {
     translate(M0 + [0, 0, dz]) micro_model();
     translate(G0 + [0, 0, dz]) gy521_model();
-    translate(S0 + [0, 0, dz]) shifter_model();
+    if (use_shifter) translate(S0 + [0, 0, dz]) shifter_model();
     // M2.5 screws through the GY-521 into the bosses
     for (i = [0, 1]) color("DimGray") translate(G0 + [(gy_l - gy_hole_pitch) / 2 + i * gy_hole_pitch, gy_w - gy_hole_inset, gy_t + dz]) {
         cylinder(d = 4.5, h = 1.6); translate([0, 0, -6]) cylinder(d = 2.5, h = 6);
@@ -257,7 +276,21 @@ module boards(dz = 0) {
 }
 // illustrative wires: Micro pads (+Y edge, USB-far end) -> shifter HV side, shifter LV side -> GY-521 header
 wire_cols = ["Red", "Orange", "Black", "DodgerBlue", "LimeGreen"];
-module wires(dz = 0) {
+module wires(dz = 0) { if (is_nrf) wires_nrf(dz); else wires_avr(dz); }
+// nRF board straight to the GY-521: VCC (+Y edge pad 3), GND (-Y pad 2), SDA = 1.00 (-Y pad 8), SCL = 0.11 (-Y pad 9)
+// GY-521 header from its first pin: VCC GND SCL SDA XDA XCL AD0 INT
+nrf_wires = [ [3, 1, 0, "Red"], [2, 0, 1, "Black"], [9, 0, 2, "Yellow"], [8, 0, 3, "LimeGreen"] ];  // [pad, edge(1=+Y), gy pin, colour]
+module wires_nrf(dz = 0) {
+    zt = floor_t + micro_z0 + micro_t + 3.2 + dz;
+    for (k = [0 : 3]) let(w = nrf_wires[k]) {
+        p0 = M0 + [pad_x(w[0]), w[1] ? micro_w - 0.9 : 0.9, micro_t + dz];
+        g = G0 + [gy_l / 2 - 3.5 * 2.54 + w[2] * 2.54, 1.3, gy_t + dz];
+        ylane = M0[1] + 2.6 + k * 0.9;
+        wire([p0, [p0[0], p0[1], zt + k * 0.35], [p0[0] + 1.5, ylane, zt + k * 0.35], [g[0] - 1.5, ylane, zt + k * 0.35],
+              [g[0], g[1], g[2] + 2], g], w[3]);
+    }
+}
+module wires_avr(dz = 0) {
     zt = floor_t + micro_z0 + micro_t + 3.5 + dz;
     for (k = [0 : 4]) {
         p0 = M0 + [2.2 + (12 + k) * 2.54, micro_w - 0.9, micro_t + dz];

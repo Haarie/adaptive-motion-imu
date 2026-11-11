@@ -1,14 +1,18 @@
 # AdaptiveMotionIMU
 
-Closed-loop motion for SimHub: an MPU-6050 on the seat (Arduino Micro) measures what the rig really does,
+Closed-loop motion for SimHub: an MPU-6050 on the seat (ProMicro nRF52840, USB-C) measures what the rig really does,
 and a SimHub plugin attenuates motion when the seat approaches limits you set.
 
 ```
 firmware/
-  AdaptiveMotionIMU/AdaptiveMotionIMU.ino   sketch (Arduino IDE 2: Board = Arduino Micro)
-  AdaptiveMotionIMU_micro.hex / _nano.hex   prebuilt images (ArduinoCore-avr, -Os)
+  AdaptiveMotionIMU/AdaptiveMotionIMU.ino   sketch (Arduino IDE 2: Board = "AliExpress ProMicro nRF52840")
+  AdaptiveMotionIMU_promicro_nrf52840.uf2   prebuilt image: drag onto the NICENANO drive (no IDE needed)
+  AdaptiveMotionIMU_promicro_nrf52840.hex   same, Intel HEX (app at 0x26000, S140 6.1.1 bootloader)
+  AdaptiveMotionIMU_micro.hex / _nano.hex   legacy AVR images (Arduino Micro / Nano)
   PROTOCOL.md                               frame + command reference
-  build_check.sh                            compile with plain avr-gcc (CI / no IDE)
+  build_nrf.sh                              compile for the nRF52840 with arduino-cli + ArduinoNRF core
+  build_check.sh                            compile the AVR variants with plain avr-gcc
+  tools/hex2uf2.py                          HEX -> UF2 (family 0xADA52840)
   host_test/                                runs the real sketch on a PC with a fake MPU, writes frames.bin
 plugin/SimSpares.AdaptiveMotion/
   SimSpares.AdaptiveMotion.csproj           net48, references SimHub from C:\Program Files (x86)\SimHub
@@ -22,10 +26,33 @@ plugin/SimSpares.AdaptiveMotion/
 plugin/tools/check.sh                       Mono: tests + stub compile + live-view preview render: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
 enclosure/
   adaptive_motion_imu_enclosure.scad        parametric source
-  base.stl, lid.stl, lid_inlay.stl            print-ready (lid + inlay share coordinates for the MMU3)
+  base.stl, lid.stl, lid_inlay.stl          print-ready, sized for the ProMicro nRF52840 (board="micro" for the old Micro) (lid + inlay share coordinates for the MMU3)
   preview.png, preview_base.png
   fit_figure.py                             annotated fit picture -> docs/enclosure_fit.png (parts "fit" / "exploded")
 ```
+
+## Controller board: ProMicro nRF52840 (Editing_PC or RYZEN-Racing)
+The board is a nice!nano v2 clone (nRF52840, USB-C, **3.3 V logic**, Adafruit UF2 bootloader). Because it is
+3.3 V like the GY-521, **no level shifter** is used: four wires, board straight to the sensor.
+
+| GY-521 pin | Board pad (silk) | Note |
+|---|---|---|
+| VCC | `VCC` (+Y edge, 4th pad from USB) | 3.3 V output, switched by P0.13; firmware switches it on and auto-detects the polarity |
+| GND | `GND` (-Y edge, 3rd pad) | |
+| SDA | `1.00` (-Y edge, 9th pad) | Arduino D6, the core's default SDA |
+| SCL | `0.11` (-Y edge, 10th pad) | Arduino D7, the core's default SCL |
+| AD0, INT, XDA, XCL | not connected | AD0 has a pull-down on the module → address 0x68 |
+
+Keep pads 5–8 on both edges free of solder blobs: the lid ribs press on that part of the PCB edge.
+
+**Flash without an IDE:** double-tap RST→GND quickly; a drive **NICENANO** appears. Copy
+`firmware/AdaptiveMotionIMU_promicro_nrf52840.uf2` onto it; the board reboots into the firmware
+(check `INFO_UF2.TXT` on the drive says SoftDevice S140 6.1.1 — the image starts at 0x26000).
+**With the Arduino IDE 2:** File → Preferences → Additional boards manager URLs:
+`https://raw.githubusercontent.com/dunknowcoding/ArduinoNRF/main/package_arduinonrf_index.json` →
+Boards Manager "ArduinoNRF" → Board **AliExpress ProMicro nRF52840** → Upload.
+Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.2.0 who=0x68 …`. LED: steady =
+sensor OK + host connected, slow blink = waiting for SimHub, fast blink = no sensor (check the four wires).
 
 ## Build the plugin (RYZEN-Racing)
 1. Install the .NET Framework 4.8 Developer Pack and the .NET SDK (or Visual Studio 2022).

@@ -19,6 +19,7 @@
 #define WDTO_15MS 0
 #define WDTO_250MS 5
 #define USBCON 1
+#define ARDUINO_ARCH_AVR 1
 typedef uint8_t byte;
 static uint32_t g_us = 0;
 uint32_t micros() { return g_us; }
