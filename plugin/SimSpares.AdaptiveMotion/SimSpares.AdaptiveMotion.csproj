@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Build on RYZEN-Racing (where SimHub is installed), Visual Studio 2022 or `dotnet build -c Release`.
+    Needs the .NET Framework 4.8 Developer Pack. References come straight from your SimHub install.
+    Override the path if needed:  dotnet build -c Release -p:SimHubDir="D:\SimHub"
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>SimSpares.AdaptiveMotion</AssemblyName>
+    <RootNamespace>SimSpares.AdaptiveMotion</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>Haarie / Sim-Spares</Authors>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <SimHubDir Condition="'$(SimHubDir)' == ''">C:\Program Files (x86)\SimHub</SimHubDir>
+    <!-- Set to false to build without copying into SimHub (e.g. SimHub running and locked) -->
+    <DeployToSimHub Condition="'$(DeployToSimHub)' == ''">true</DeployToSimHub>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SimHub.Plugins"><HintPath>$(SimHubDir)\SimHub.Plugins.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GameReaderCommon"><HintPath>$(SimHubDir)\GameReaderCommon.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SimHub.Logging"><HintPath>$(SimHubDir)\SimHub.Logging.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="log4net"><HintPath>$(SimHubDir)\log4net.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.IO.Ports" Condition="'$(TargetFramework)' != 'net48'" />
+  </ItemGroup>
+
+  <!-- SimHub loads plugin DLLs from its install root (not a Plugins sub-folder). Needs write access. -->
+  <Target Name="DeployToSimHub" AfterTargets="Build" Condition="'$(DeployToSimHub)' == 'true' And Exists('$(SimHubDir)')">
+    <Copy SourceFiles="$(TargetPath);$(TargetDir)$(TargetName).pdb" DestinationFolder="$(SimHubDir)" ContinueOnError="true" />
+    <Message Importance="high" Text="Copied $(TargetFileName) to $(SimHubDir) — restart SimHub." />
+  </Target>
+</Project>

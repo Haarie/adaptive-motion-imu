@@ -1,0 +1,211 @@
+using System;
+using System.Globalization;
+using System.IO.Ports;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using SimSpares.AdaptiveMotion.Core;
+
+namespace SimSpares.AdaptiveMotion
+{
+    /// <summary>
+    /// Settings page, built in code (no XAML) to keep the project to plain .cs files.
+    /// Edits go into the plugin's Settings object; "Save &amp; apply" persists and restarts serial/proxy.
+    /// </summary>
+    public class SettingsControl : UserControl
+    {
+        private readonly AdaptiveMotionPlugin _p;
+        private readonly TextBlock _live = Mono();
+        private readonly TextBlock _msg = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
+        private readonly DispatcherTimer _timer;
+
+        public SettingsControl(AdaptiveMotionPlugin plugin)
+        {
+            _p = plugin;
+            var s = plugin.Settings;
+            var root = new StackPanel { Margin = new Thickness(12) };
+
+            // ---------------- Live --------------------------------------------------------------
+            root.Children.Add(Header("Live"));
+            root.Children.Add(_live);
+            root.Children.Add(_msg);
+
+            // ---------------- Sensor ------------------------------------------------------------
+            root.Children.Add(Header("Sensor (Arduino + MPU-6050)"));
+            var port = new ComboBox { IsEditable = true, Width = 140, Text = s.ComPort };
+            RefreshPorts(port);
+            port.DropDownOpened += (o, e) => RefreshPorts(port);
+            port.LostFocus += (o, e) => s.ComPort = port.Text.Trim();
+            port.SelectionChanged += (o, e) => { if (port.SelectedItem != null) s.ComPort = port.SelectedItem.ToString(); };
+            root.Children.Add(Row("COM port", port));
+            root.Children.Add(Row("Sensor axis pointing forward", EnumBox(s.MountForward, v => s.MountForward = v)));
+            root.Children.Add(Row("Sensor axis pointing up", EnumBox(s.MountUp, v => s.MountUp = v)));
+            root.Children.Add(Row("Device DLPF (0-6)", IntBox(s.DeviceDlpf, v => s.DeviceDlpf = v)));
+            root.Children.Add(Row("Device output divider (500/n Hz)", IntBox(s.DeviceOutputDivider, v => s.DeviceOutputDivider = v)));
+            root.Children.Add(Buttons(
+                Btn("Capture level (rig parked)", () => _p.StartLevelCapture()),
+                Btn("Gyro calibrate (rig still)", () => _p.Imu.Send("GYROCAL")),
+                Btn("Send DLPF/ODR to device", () => { _p.Imu.Send("DLPF " + s.DeviceDlpf); _p.Imu.Send("ODR " + s.DeviceOutputDivider); _p.Imu.Send("INFO"); }),
+                Btn("Ping", () => _p.Imu.Send("PING"))));
+
+            // ---------------- Mode --------------------------------------------------------------
+            root.Children.Add(Header("What the plugin is allowed to do"));
+            root.Children.Add(Row("Mode", EnumBox(s.Mode, v => s.Mode = v)));
+            root.Children.Add(Row("Adaptive enabled", Check(s.AdaptiveEnabled, v => s.AdaptiveEnabled = v)));
+
+            // ---------------- Envelope ----------------------------------------------------------
+            var c = s.Controller;
+            root.Children.Add(Header("Envelope measured at the seat"));
+            root.Children.Add(Row("Pitch limit (deg)", Num(c.PitchLimitDeg, v => c.PitchLimitDeg = v)));
+            root.Children.Add(Row("Roll limit (deg)", Num(c.RollLimitDeg, v => c.RollLimitDeg = v)));
+            root.Children.Add(Row("Angular rate limit (deg/s)", Num(c.RateLimitDps, v => c.RateLimitDps = v)));
+            root.Children.Add(Row("Heave cue limit (g)", Num(c.HeaveLimitG, v => c.HeaveLimitG = v)));
+            root.Children.Add(Row("Horizontal cue limit (g)", Num(c.CueLimitG, v => c.CueLimitG = v)));
+            root.Children.Add(Row("Vibration RMS limit (g)", Num(c.VibLimitG, v => c.VibLimitG = v)));
+            root.Children.Add(Row("Knee (fraction of limit)", Num(c.Knee, v => c.Knee = v)));
+            root.Children.Add(Row("Attack (s)", Num(c.AttackSec, v => c.AttackSec = v)));
+            root.Children.Add(Row("Release (s)", Num(c.ReleaseSec, v => c.ReleaseSec = v)));
+            root.Children.Add(Row("Minimum gain", Num(c.MinGain, v => c.MinGain = Clamp01(v))));
+            root.Children.Add(Row("Impact threshold (g)", Num(c.ImpactG, v => c.ImpactG = v)));
+            root.Children.Add(Row("Hard pitch trip (deg)", Num(c.PitchHardDeg, v => c.PitchHardDeg = v)));
+            root.Children.Add(Row("Hard roll trip (deg)", Num(c.RollHardDeg, v => c.RollHardDeg = v)));
+            root.Children.Add(Row("Trip auto-reset", Check(c.TripAutoReset, v => c.TripAutoReset = v)));
+            root.Children.Add(Row("Failsafe gain (sensor lost)", Num(c.FailsafeGain, v => c.FailsafeGain = Clamp01(v))));
+
+            // ---------------- UDP proxy ---------------------------------------------------------
+            var pk = s.Packet;
+            root.Children.Add(Header("UDP proxy (SimHub Generic UDP → plugin → controller)"));
+            root.Children.Add(Row("Listen port (point SimHub here, 127.0.0.1)", IntBox(s.ProxyListenPort, v => s.ProxyListenPort = v)));
+            root.Children.Add(Row("Controller host", Txt(s.ProxyTargetHost, v => s.ProxyTargetHost = v)));
+            root.Children.Add(Row("Controller port", IntBox(s.ProxyTargetPort, v => s.ProxyTargetPort = v)));
+            root.Children.Add(Row("Header bytes before Axis1", IntBox(pk.HeaderBytes, v => pk.HeaderBytes = v)));
+            root.Children.Add(Row("Axis count", IntBox(pk.AxisCount, v => pk.AxisCount = v)));
+            root.Children.Add(Row("Bytes per axis (1/2)", IntBox(pk.BytesPerAxis, v => pk.BytesPerAxis = v == 1 ? 1 : 2)));
+            root.Children.Add(Row("High byte first (Axis1a = MSB)", Check(pk.BigEndian, v => pk.BigEndian = v)));
+            root.Children.Add(Row("Max value (255/1023/4095/65535)", IntBox(pk.MaxValue, v => pk.MaxValue = v)));
+            root.Children.Add(Row("Trailer bytes after last axis", IntBox(pk.TrailerBytes, v => pk.TrailerBytes = v)));
+            root.Children.Add(Row("Actuator layout", EnumBox(s.Actuators, v => s.Actuators = v)));
+            root.Children.Add(Buttons(Btn("Capture neutral (motion on, game idle)", () => _p.StartNeutralCapture())));
+            root.Children.Add(Row("I verified the decoded axes move correctly", Check(s.LayoutVerified, v => s.LayoutVerified = v)));
+
+            root.Children.Add(Header("SimHub gain-event mode"));
+            root.Children.Add(Row("One SimHub gain step (%)", Num(s.SimHubGainStepPct, v => s.SimHubGainStepPct = v)));
+            root.Children.Add(Row("Max steps down", IntBox(s.SimHubMaxSteps, v => s.SimHubMaxSteps = v)));
+
+            root.Children.Add(Buttons(
+                Btn("Save & apply", () => { _p.SaveSettings(); _p.ApplySettings(); _p.Note("Settings saved"); }),
+                Btn("Reset trip", () => _p.Controller.ResetTrip()),
+                Btn("Reset gains", () => _p.Controller.ResetGains())));
+
+            Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _timer.Tick += (o, e) => Refresh();
+            Loaded += (o, e) => _timer.Start();
+            Unloaded += (o, e) => _timer.Stop();
+        }
+
+        private void Refresh()
+        {
+            var st = _p.State;
+            var g = _p.Controller.Snapshot;
+            var xf = _p.Proxy.Transformer;
+            string axes = xf == null ? "-" : string.Join(" ", xf.LastAxes.Select(v => v.ToString("F0", CultureInfo.InvariantCulture)));
+            _live.Text = string.Format(CultureInfo.InvariantCulture,
+                "Sensor   {0}  {1:F0} fps  crc-err {2}  {3}\n" +
+                "Seat     pitch {4,6:F2}°  roll {5,6:F2}°   rate p {6,6:F1} r {7,6:F1} °/s\n" +
+                "Cue (g)  surge {8,6:F3}  sway {9,6:F3}  heave {10,6:F3}   peak {11:F2}  vib {12:F3}\n" +
+                "Levels   pitch {13:F2}  roll {14:F2}  heave {15:F2}  cue {16:F2}\n" +
+                "Gains    global {17:F2}  pitch {18:F2}  roll {19:F2}  heave {20:F2}   [{21}]  impacts {22}\n" +
+                "Tracking pitch {23} ms (r={24:F2}, {25:F1}°/unit)   roll {26} ms (r={27:F2})\n" +
+                "Proxy    {28}  fwd {29}  axes [{30}]",
+                _p.Imu.Connected ? "connected" : "NOT connected", _p.FrameRate, _p.Imu.Parser.CrcErrors, _p.DeviceInfo,
+                st.PitchDeg, st.RollDeg, st.PitchRateDps, st.RollRateDps,
+                st.CueSurgeG, st.CueSwayG, st.CueHeaveG, st.PeakDevG, st.VibRmsG,
+                _p.Controller.LevelPitch, _p.Controller.LevelRoll, _p.Controller.LevelHeave, _p.Controller.LevelGlobal,
+                g.Global, g.Pitch, g.Roll, g.Heave, g.Status, _p.Controller.ImpactCount,
+                _p.PitchTracking.Valid ? _p.PitchTracking.DelayMs.ToString("F0") : "--", _p.PitchTracking.Coherence, _p.PitchTracking.Scale,
+                _p.RollTracking.Valid ? _p.RollTracking.DelayMs.ToString("F0") : "--", _p.RollTracking.Coherence,
+                _p.ProxyActive ? "APPLYING" : (_p.Proxy.Running ? "passthrough" : "off"), _p.Proxy.Forwarded, axes);
+            _msg.Text = _p.LastMessage;
+        }
+
+        // ---------------- tiny UI helpers -----------------------------------------------------
+        private static TextBlock Mono() => new TextBlock { FontFamily = new System.Windows.Media.FontFamily("Consolas"), FontSize = 12 };
+        private static TextBlock Header(string t) => new TextBlock { Text = t, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 4) };
+
+        private static FrameworkElement Row(string label, FrameworkElement editor)
+        {
+            var g = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var l = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(editor, 1);
+            g.Children.Add(l); g.Children.Add(editor);
+            return g;
+        }
+
+        private static Panel Buttons(params Button[] bs)
+        {
+            var w = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var b in bs) w.Children.Add(b);
+            return w;
+        }
+
+        private Button Btn(string text, Action a)
+        {
+            var b = new Button { Content = text, Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 3, 10, 3) };
+            b.Click += (o, e) => { try { a(); } catch (Exception ex) { _p.Note(ex.Message); } };
+            return b;
+        }
+
+        private static TextBox Num(double v, Action<double> set)
+        {
+            var t = new TextBox { Width = 90, Text = v.ToString(CultureInfo.InvariantCulture) };
+            t.LostFocus += (o, e) =>
+            {
+                if (double.TryParse(t.Text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) set(d);
+            };
+            return t;
+        }
+
+        private static TextBox IntBox(int v, Action<int> set)
+        {
+            var t = new TextBox { Width = 90, Text = v.ToString(CultureInfo.InvariantCulture) };
+            t.LostFocus += (o, e) => { if (int.TryParse(t.Text, out var i)) set(i); };
+            return t;
+        }
+
+        private static TextBox Txt(string v, Action<string> set)
+        {
+            var t = new TextBox { Width = 160, Text = v ?? "" };
+            t.LostFocus += (o, e) => set(t.Text.Trim());
+            return t;
+        }
+
+        private static CheckBox Check(bool v, Action<bool> set)
+        {
+            var c = new CheckBox { IsChecked = v, VerticalAlignment = VerticalAlignment.Center };
+            c.Checked += (o, e) => set(true);
+            c.Unchecked += (o, e) => set(false);
+            return c;
+        }
+
+        private static ComboBox EnumBox<T>(T v, Action<T> set) where T : struct
+        {
+            var c = new ComboBox { Width = 180, ItemsSource = Enum.GetValues(typeof(T)), SelectedItem = v };
+            c.SelectionChanged += (o, e) => { if (c.SelectedItem is T x) set(x); };
+            return c;
+        }
+
+        private static void RefreshPorts(ComboBox c)
+        {
+            var current = c.Text;
+            c.ItemsSource = SerialPort.GetPortNames().OrderBy(n => n).ToArray();
+            c.Text = current;
+        }
+
+        private static double Clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+    }
+}

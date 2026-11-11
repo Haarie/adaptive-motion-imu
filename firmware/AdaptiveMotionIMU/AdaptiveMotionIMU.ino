@@ -1,0 +1,472 @@
+/*
+  AdaptiveMotionIMU — rig-mounted IMU for the SimHub "Adaptive Motion" plugin
+  -----------------------------------------------------------------------------
+  Target   : Arduino Micro (ATmega32U4, native USB). Also builds for Pro Micro 5V
+             and, with one define, for Nano (ATmega328P) — see BOARD NOTES below.
+  Sensor   : MPU-6050 (GY-521 breakout) on I2C @ 400 kHz.
+  Output   : framed binary packets over USB CDC (see PROTOCOL.md), 250 Hz default.
+
+  Pipeline : MPU-6050 sampled at 500 Hz (DLPF on, 1 kHz / (1+SMPLRT_DIV))
+             -> gyro bias removal (EEPROM)
+             -> Mahony AHRS (accel-gated, so surge/brake cues don't corrupt tilt)
+             -> per-window stats (mean accel/gyro, peak |a|-1g, high-pass vibration RMS)
+             -> frame every OUT_DIV samples, CRC-8.
+
+  No external libraries: register-level driver, only Wire/EEPROM/avr wdt.
+
+  BOARD NOTES
+    Micro / Pro Micro : SDA = D2, SCL = D3, MPU INT -> D7 (optional, polled anyway).
+    Nano              : SDA = A4, SCL = A5, MPU INT -> D2.
+    GY-521 pull-ups go to its own 3.3 V LDO. A 5 V AVR reads that as HIGH in practice
+    but it is out of spec (VIH = 0.7*VCC = 3.5 V); fit the BSS138 level shifter from
+    the BOM for a rig that vibrates all day.
+
+  License: MIT. (c) 2026 Haarie / Sim-Spares.
+*/
+
+#include <Arduino.h>
+#include <Wire.h>
+#include <EEPROM.h>
+#include <avr/wdt.h>
+
+// ----------------------------------------------------------------------------
+// Build configuration
+// ----------------------------------------------------------------------------
+#define FW_VERSION        "1.0.0"
+#define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
+#define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
+#define SAMPLE_HZ         500         // internal fusion rate
+#define DEFAULT_OUT_DIV   2           // 500/2 = 250 Hz frames to the PC
+#define DEFAULT_DLPF      3           // 44 Hz accel / 42 Hz gyro, ~4.9 ms group delay
+#define ACCEL_FS          1           // 0=±2g 1=±4g 2=±8g 3=±16g  (end-stop hits exceed 2 g)
+#define GYRO_FS           1           // 0=±250 1=±500 2=±1000 3=±2000 dps
+#define LED_PIN           LED_BUILTIN
+
+// Mahony gains. Low Kp + accel gating: we trust the gyro during cues.
+#define MAHONY_KP         0.6f
+#define MAHONY_KI         0.0f
+#define ACC_GATE_LO       0.90f       // only use accel for tilt correction when
+#define ACC_GATE_HI       1.10f       //  0.9 g < |a| < 1.1 g
+
+// High-pass corner for the vibration metric (first order), Hz
+#define VIB_HP_HZ         8.0f
+
+// ----------------------------------------------------------------------------
+// MPU-6050 registers
+// ----------------------------------------------------------------------------
+#define R_SMPLRT_DIV   0x19
+#define R_CONFIG       0x1A
+#define R_GYRO_CONFIG  0x1B
+#define R_ACCEL_CONFIG 0x1C
+#define R_INT_PIN_CFG  0x37
+#define R_INT_ENABLE   0x38
+#define R_INT_STATUS   0x3A
+#define R_ACCEL_XOUT_H 0x3B
+#define R_PWR_MGMT_1   0x6B
+#define R_WHO_AM_I     0x75
+
+// ----------------------------------------------------------------------------
+// Protocol
+// ----------------------------------------------------------------------------
+#define SYNC0          0xA5
+#define SYNC1          0x5A
+#define T_IMU          0x01
+#define T_TEXT         0x02
+
+#define F_I2C_ERR      0x01
+#define F_GYRO_CAL     0x02
+#define F_ACC_SAT      0x04
+#define F_GYR_SAT      0x08
+#define F_WHOAMI_ODD   0x10
+#define F_DROPPED      0x20
+#define F_GATED        0x40   // accel correction was gated off for most of the window
+
+// ----------------------------------------------------------------------------
+// Persistent settings
+// ----------------------------------------------------------------------------
+struct Persist {
+  uint16_t magic;
+  float    gbias[3];      // rad/s
+  uint8_t  dlpf;
+  uint8_t  outDiv;
+  uint8_t  calibrated;
+  uint8_t  crc;
+};
+static const uint16_t PERSIST_MAGIC = 0xAD01;
+static Persist P;
+
+// ----------------------------------------------------------------------------
+// State
+// ----------------------------------------------------------------------------
+static float accLsbPerG, gyrLsbPerDps;
+static float q0 = 1, q1 = 0, q2 = 0, q3 = 0;
+static float ix = 0, iy = 0, iz = 0;     // Mahony integral terms
+static uint8_t whoAmI = 0;
+static bool    i2cOk = false;
+static bool    streaming = true;
+static uint8_t seq = 0;
+static uint32_t nextSampleUs = 0;
+static uint32_t lastReinitMs = 0;
+static uint32_t lastHostCheckMs = 0;
+static bool    hostOpen = false;
+static uint16_t droppedFrames = 0;
+
+// window accumulators
+static float   wAx, wAy, wAz, wGx, wGy, wGz;
+static float   wPeakDev, wVibSq;
+static uint8_t wN, wGatedN;
+static uint8_t wFlags;
+static float   hpPrev[3], hpOut[3];      // high-pass filter state (accel, g)
+static float   hpAlpha;
+
+// command line buffer
+static char    cmdBuf[40];
+static uint8_t cmdLen = 0;
+
+// ----------------------------------------------------------------------------
+// CRC-8 (poly 0x07, init 0x00) — same as the plugin's Crc8.Compute
+// ----------------------------------------------------------------------------
+static uint8_t crc8(const uint8_t *d, uint8_t n, uint8_t c = 0) {
+  while (n--) {
+    c ^= *d++;
+    for (uint8_t i = 0; i < 8; i++) c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x07) : (uint8_t)(c << 1);
+  }
+  return c;
+}
+
+// ----------------------------------------------------------------------------
+// EEPROM
+// ----------------------------------------------------------------------------
+static void persistDefaults() {
+  P.magic = PERSIST_MAGIC;
+  P.gbias[0] = P.gbias[1] = P.gbias[2] = 0;
+  P.dlpf = DEFAULT_DLPF;
+  P.outDiv = DEFAULT_OUT_DIV;
+  P.calibrated = 0;
+}
+static void persistLoad() {
+  EEPROM.get(0, P);
+  uint8_t c = crc8((const uint8_t *)&P, sizeof(P) - 1);
+  if (P.magic != PERSIST_MAGIC || c != P.crc || P.dlpf > 6 || P.outDiv == 0 || P.outDiv > 50)
+    persistDefaults();
+}
+static void persistSave() {
+  P.crc = crc8((const uint8_t *)&P, sizeof(P) - 1);
+  EEPROM.put(0, P);
+}
+
+// ----------------------------------------------------------------------------
+// I2C helpers
+// ----------------------------------------------------------------------------
+static bool wr(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  return Wire.endTransmission() == 0;
+}
+static bool rd(uint8_t reg, uint8_t *buf, uint8_t n) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom((uint8_t)MPU_ADDR, n) != n) return false;
+  for (uint8_t i = 0; i < n; i++) buf[i] = Wire.read();
+  return true;
+}
+
+static bool mpuInit() {
+  Wire.begin();
+  Wire.setClock(400000);
+#if defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(3000 /*us*/, true);   // never hang the loop on a glitched bus
+#endif
+  if (!rd(R_WHO_AM_I, &whoAmI, 1)) return false;
+  if (!wr(R_PWR_MGMT_1, 0x80)) return false;  // device reset
+  delay(100);
+  wdt_reset();
+  bool ok = wr(R_PWR_MGMT_1, 0x01)              // wake, PLL with X gyro ref
+         && wr(R_CONFIG, P.dlpf & 0x07)         // DLPF -> 1 kHz internal rate
+         && wr(R_SMPLRT_DIV, (1000 / SAMPLE_HZ) - 1)
+         && wr(R_GYRO_CONFIG, GYRO_FS << 3)
+         && wr(R_ACCEL_CONFIG, ACCEL_FS << 3)
+         && wr(R_INT_PIN_CFG, 0x10)             // INT clears on any read
+         && wr(R_INT_ENABLE, 0x01);             // data ready
+  accLsbPerG   = 16384.0f / (float)(1 << ACCEL_FS);
+  gyrLsbPerDps = 131.0f   / (float)(1 << GYRO_FS);
+  return ok;
+}
+
+// ----------------------------------------------------------------------------
+// Framing
+// ----------------------------------------------------------------------------
+static void sendFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
+  if (!hostOpen) return;
+  uint8_t hdr[5] = { SYNC0, SYNC1, type, len, seq++ };
+  uint8_t c = crc8(hdr + 2, 3);
+  c = crc8(payload, len, c);
+  // Never block the sensor loop on a slow/absent host: drop instead.
+  if (Serial.availableForWrite() < (int)(len + 6)) { droppedFrames++; wFlags |= F_DROPPED; return; }
+  Serial.write(hdr, 5);
+  Serial.write(payload, len);
+  Serial.write(c);
+}
+
+static void sendText(const char *s) {
+  sendFrame(T_TEXT, (const uint8_t *)s, (uint8_t)strnlen(s, 60));
+}
+
+static inline void put16(uint8_t *&p, int16_t v) { *p++ = (uint8_t)v; *p++ = (uint8_t)(v >> 8); }
+static inline void putU16(uint8_t *&p, uint16_t v) { *p++ = (uint8_t)v; *p++ = (uint8_t)(v >> 8); }
+static inline int16_t clamp16(float v) { return v > 32767 ? 32767 : (v < -32768 ? -32768 : (int16_t)lroundf(v)); }
+
+static void emitImuFrame() {
+  uint8_t buf[30];
+  uint8_t *p = buf;
+  uint32_t t = micros();
+  *p++ = (uint8_t)t; *p++ = (uint8_t)(t >> 8); *p++ = (uint8_t)(t >> 16); *p++ = (uint8_t)(t >> 24);
+  float inv = 1.0f / (float)wN;
+  put16(p, clamp16(wAx * inv * 1000.0f));          // mg
+  put16(p, clamp16(wAy * inv * 1000.0f));
+  put16(p, clamp16(wAz * inv * 1000.0f));
+  put16(p, clamp16(wGx * inv * 57.29578f * 10.0f)); // 0.1 deg/s
+  put16(p, clamp16(wGy * inv * 57.29578f * 10.0f));
+  put16(p, clamp16(wGz * inv * 57.29578f * 10.0f));
+  put16(p, clamp16(q0 * 16384.0f));                 // Q14 quaternion
+  put16(p, clamp16(q1 * 16384.0f));
+  put16(p, clamp16(q2 * 16384.0f));
+  put16(p, clamp16(q3 * 16384.0f));
+  putU16(p, (uint16_t)min(65535.0f, wPeakDev * 1000.0f));              // mg
+  putU16(p, (uint16_t)min(65535.0f, sqrtf(wVibSq * inv) * 1000.0f));  // mg rms
+  uint8_t f = wFlags;
+  if (!i2cOk) f |= F_I2C_ERR;
+  if (P.calibrated) f |= F_GYRO_CAL;
+  if (whoAmI != 0x68) f |= F_WHOAMI_ODD;
+  if (wGatedN > wN / 2) f |= F_GATED;
+  *p++ = f;
+  *p++ = (uint8_t)min(droppedFrames, (uint16_t)255);
+  sendFrame(T_IMU, buf, (uint8_t)(p - buf));
+
+  wAx = wAy = wAz = wGx = wGy = wGz = 0;
+  wPeakDev = 0; wVibSq = 0; wN = 0; wGatedN = 0; wFlags = 0;
+}
+
+// ----------------------------------------------------------------------------
+// Mahony AHRS (6-axis)
+// ----------------------------------------------------------------------------
+static void mahony(float gx, float gy, float gz, float ax, float ay, float az, float dt, bool useAcc) {
+  if (useAcc) {
+    float n = ax * ax + ay * ay + az * az;
+    if (n > 0.0f) {
+      n = 1.0f / sqrtf(n);
+      ax *= n; ay *= n; az *= n;
+      // estimated gravity direction
+      float vx = 2.0f * (q1 * q3 - q0 * q2);
+      float vy = 2.0f * (q0 * q1 + q2 * q3);
+      float vz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+      float ex = (ay * vz - az * vy);
+      float ey = (az * vx - ax * vz);
+      float ez = (ax * vy - ay * vx);
+      if (MAHONY_KI > 0.0f) {
+        ix += MAHONY_KI * ex * dt; iy += MAHONY_KI * ey * dt; iz += MAHONY_KI * ez * dt;
+        gx += ix; gy += iy; gz += iz;
+      }
+      gx += MAHONY_KP * ex; gy += MAHONY_KP * ey; gz += MAHONY_KP * ez;
+    }
+  }
+  gx *= 0.5f * dt; gy *= 0.5f * dt; gz *= 0.5f * dt;
+  float qa = q0, qb = q1, qc = q2;
+  q0 += (-qb * gx - qc * gy - q3 * gz);
+  q1 += (qa * gx + qc * gz - q3 * gy);
+  q2 += (qa * gy - qb * gz + q3 * gx);
+  q3 += (qa * gz + qb * gy - qc * gx);
+  float n = 1.0f / sqrtf(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+  q0 *= n; q1 *= n; q2 *= n; q3 *= n;
+}
+
+// Seed attitude from gravity so we don't spend seconds converging at boot
+static void seedFromAccel(float ax, float ay, float az) {
+  float roll  = atan2f(ay, az);
+  float pitch = atan2f(-ax, sqrtf(ay * ay + az * az));
+  float cr = cosf(roll * 0.5f), sr = sinf(roll * 0.5f);
+  float cp = cosf(pitch * 0.5f), sp = sinf(pitch * 0.5f);
+  q0 = cr * cp; q1 = sr * cp; q2 = cr * sp; q3 = -sr * sp;
+}
+
+// ----------------------------------------------------------------------------
+// Sample
+// ----------------------------------------------------------------------------
+static bool readRaw(float &ax, float &ay, float &az, float &gx, float &gy, float &gz, uint8_t &satFlags) {
+  uint8_t b[14];
+  if (!rd(R_ACCEL_XOUT_H, b, 14)) return false;
+  int16_t r[7];
+  for (uint8_t i = 0; i < 7; i++) r[i] = (int16_t)((b[2 * i] << 8) | b[2 * i + 1]);
+  satFlags = 0;
+  for (uint8_t i = 0; i < 3; i++) if (r[i] == 32767 || r[i] == -32768) satFlags |= F_ACC_SAT;
+  for (uint8_t i = 4; i < 7; i++) if (r[i] == 32767 || r[i] == -32768) satFlags |= F_GYR_SAT;
+  ax = r[0] / accLsbPerG; ay = r[1] / accLsbPerG; az = r[2] / accLsbPerG;
+  const float d2r = 0.01745329f;
+  gx = r[4] / gyrLsbPerDps * d2r - P.gbias[0];
+  gy = r[5] / gyrLsbPerDps * d2r - P.gbias[1];
+  gz = r[6] / gyrLsbPerDps * d2r - P.gbias[2];
+  return true;
+}
+
+static void sampleOnce(float dt) {
+  float ax, ay, az, gx, gy, gz;
+  uint8_t sat;
+  if (!readRaw(ax, ay, az, gx, gy, gz, sat)) { i2cOk = false; return; }
+  wFlags |= sat;
+
+  float an = sqrtf(ax * ax + ay * ay + az * az);
+  bool useAcc = (an > ACC_GATE_LO && an < ACC_GATE_HI);
+  if (!useAcc) wGatedN++;
+  mahony(gx, gy, gz, ax, ay, az, dt, useAcc);
+
+  // vibration: first-order high-pass per axis, magnitude squared
+  float vib = 0;
+  float a[3] = { ax, ay, az };
+  for (uint8_t i = 0; i < 3; i++) {
+    hpOut[i] = hpAlpha * (hpOut[i] + a[i] - hpPrev[i]);
+    hpPrev[i] = a[i];
+    vib += hpOut[i] * hpOut[i];
+  }
+  wVibSq += vib;
+  float dev = fabsf(an - 1.0f);
+  if (dev > wPeakDev) wPeakDev = dev;
+
+  wAx += ax; wAy += ay; wAz += az;
+  wGx += gx; wGy += gy; wGz += gz;
+  wN++;
+  if (wN >= P.outDiv) {
+    if (streaming) emitImuFrame();
+    else { wAx = wAy = wAz = wGx = wGy = wGz = 0; wPeakDev = wVibSq = 0; wN = wGatedN = 0; wFlags = 0; }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Gyro bias calibration (rig must be still: motion parked)
+// ----------------------------------------------------------------------------
+static void gyroCal() {
+  const uint16_t N = 1000;
+  float sx = 0, sy = 0, sz = 0, mx = 0;
+  float old[3] = { P.gbias[0], P.gbias[1], P.gbias[2] };
+  P.gbias[0] = P.gbias[1] = P.gbias[2] = 0;
+  for (uint16_t i = 0; i < N; i++) {
+    float ax, ay, az, gx, gy, gz; uint8_t s;
+    if (!readRaw(ax, ay, az, gx, gy, gz, s)) { memcpy(P.gbias, old, sizeof(old)); sendText("ERR GYROCAL i2c"); return; }
+    sx += gx; sy += gy; sz += gz;
+    float m = fabsf(gx) + fabsf(gy) + fabsf(gz);
+    if (m > mx) mx = m;
+    delayMicroseconds(1800);
+    if ((i & 63) == 0) wdt_reset();
+  }
+  if (mx > 0.35f) {   // > ~20 deg/s summed: something moved
+    memcpy(P.gbias, old, sizeof(old));
+    sendText("ERR GYROCAL motion");
+    return;
+  }
+  P.gbias[0] = sx / N; P.gbias[1] = sy / N; P.gbias[2] = sz / N;
+  P.calibrated = 1;
+  persistSave();
+  sendText("OK GYROCAL");
+}
+
+// ----------------------------------------------------------------------------
+// Commands (ASCII, newline terminated)
+//   PING | INFO | GYROCAL | DLPF n (0..6) | ODR n (out divider 1..50)
+//   STREAM 0|1 | DEFAULTS | REBOOT
+// ----------------------------------------------------------------------------
+static void handleCmd(char *c) {
+  char out[60];
+  if (!strcmp(c, "PING")) { sendText("PONG"); }
+  else if (!strcmp(c, "INFO")) {
+    snprintf(out, sizeof(out), "INFO fw=%s who=0x%02X fs=%d out=%d dlpf=%d cal=%d",
+             FW_VERSION, whoAmI, SAMPLE_HZ, SAMPLE_HZ / P.outDiv, P.dlpf, P.calibrated);
+    sendText(out);
+  }
+  else if (!strcmp(c, "GYROCAL")) { gyroCal(); }
+  else if (!strncmp(c, "DLPF ", 5)) {
+    int v = atoi(c + 5);
+    if (v >= 0 && v <= 6) { P.dlpf = (uint8_t)v; persistSave(); wr(R_CONFIG, P.dlpf); sendText("OK DLPF"); }
+    else sendText("ERR DLPF range");
+  }
+  else if (!strncmp(c, "ODR ", 4)) {
+    int v = atoi(c + 4);
+    if (v >= 1 && v <= 50) { P.outDiv = (uint8_t)v; persistSave(); sendText("OK ODR"); }
+    else sendText("ERR ODR range");
+  }
+  else if (!strncmp(c, "STREAM ", 7)) { streaming = c[7] == '1'; sendText("OK STREAM"); }
+  else if (!strcmp(c, "DEFAULTS")) { persistDefaults(); persistSave(); i2cOk = mpuInit(); sendText("OK DEFAULTS"); }
+  else if (!strcmp(c, "REBOOT")) { sendText("OK REBOOT"); Serial.flush(); wdt_enable(WDTO_15MS); for (;;) {} }
+  else sendText("ERR unknown");
+}
+
+static void pollSerial() {
+  while (Serial.available()) {
+    char ch = (char)Serial.read();
+    if (ch == '\n' || ch == '\r') {
+      if (cmdLen) { cmdBuf[cmdLen] = 0; handleCmd(cmdBuf); cmdLen = 0; }
+    } else if (cmdLen < sizeof(cmdBuf) - 1) {
+      cmdBuf[cmdLen++] = ch;
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+void setup() {
+  MCUSR = 0;
+  wdt_disable();
+  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(SERIAL_BAUD);
+  persistLoad();
+
+  float dt = 1.0f / SAMPLE_HZ;
+  float rc = 1.0f / (2.0f * PI * VIB_HP_HZ);
+  hpAlpha = rc / (rc + dt);
+
+  i2cOk = mpuInit();
+  if (i2cOk) {
+    float ax, ay, az, gx, gy, gz; uint8_t s;
+    delay(50);
+    if (readRaw(ax, ay, az, gx, gy, gz, s)) seedFromAccel(ax, ay, az);
+  }
+  wdt_enable(WDTO_250MS);
+  nextSampleUs = micros();
+}
+
+void loop() {
+  wdt_reset();
+  uint32_t nowMs = millis();
+
+  // Host presence (DTR) — checking Serial costs ~10 ms on some cores, so only 2x/s
+  if (nowMs - lastHostCheckMs > 500) {
+    lastHostCheckMs = nowMs;
+#if defined(USBCON)
+    hostOpen = (bool)Serial;
+#else
+    hostOpen = true;
+#endif
+    digitalWrite(LED_PIN, i2cOk ? (hostOpen ? HIGH : (nowMs / 250) & 1) : (nowMs / 60) & 1);
+  }
+
+  if (!i2cOk) {
+    if (nowMs - lastReinitMs > 500) {
+      lastReinitMs = nowMs;
+      i2cOk = mpuInit();
+      // still emit a frame so the host sees F_I2C_ERR rather than silence
+      if (!i2cOk && streaming) { wN = 1; wAx = wAy = wAz = 0; emitImuFrame(); }
+    }
+    pollSerial();
+    return;
+  }
+
+  // Fixed-rate sampling from micros(); catch up at most 3 samples, then resync
+  const uint32_t periodUs = 1000000UL / SAMPLE_HZ;
+  uint8_t guard = 0;
+  while ((int32_t)(micros() - nextSampleUs) >= 0 && guard++ < 3) {
+    sampleOnce(periodUs * 1e-6f);
+    nextSampleUs += periodUs;
+  }
+  if (guard >= 3) nextSampleUs = micros() + periodUs;
+
+  pollSerial();
+}
