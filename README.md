@@ -16,7 +16,7 @@ plugin/SimSpares.AdaptiveMotion/
   SettingsControl.cs                        settings page (code-built WPF)
   Core/                                     SimHub-independent logic (tested)
   IO/                                       serial link + UDP proxy
-  Tests/CoreTests.cs                        41 tests: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
+  Tests/CoreTests.cs                        50 tests: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
 enclosure/
   adaptive_motion_imu_enclosure.scad        parametric source
   base.stl, lid.stl, lid_inlay.stl            print-ready (lid + inlay share coordinates for the MMU3)
@@ -28,6 +28,15 @@ enclosure/
 2. Close SimHub. `cd plugin/SimSpares.AdaptiveMotion && dotnet build -c Release`
    (DLL is copied into the SimHub folder; run the shell as admin or pass `-p:DeployToSimHub=false` and copy by hand).
 3. Start SimHub → enable the plugin when asked → left menu "Adaptive Motion".
+
+## Calibration
+- **Gyro bias** is learned automatically by the firmware whenever the rig is still for 2 s (AUTOCAL, on by default),
+  so it follows the sensor as it warms up. `GyroCalibrate` remains for a forced 2 s calibration.
+- **Level** is captured once, with the rig at its *centre* position (`CaptureLevel`) — never automatically,
+  because the park position is not necessarily level.
+- **Park check**: when no game runs and the rig is still, the plugin averages the parked pose and compares it with
+  the pose learned at the first park. A difference above 0.5° raises the `MountShifted` event / `Park.MountShifted`
+  property (IMU box moved, or the rig homed/parked elsewhere). It warns only. `RelearnParkPose` after re-mounting.
 
 ## Safety
 The plugin only ever attenuates (gains in [MinGain, 1]) and never moves an actuator further from neutral than

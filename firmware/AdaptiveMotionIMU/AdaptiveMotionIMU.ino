@@ -32,7 +32,7 @@
 // ----------------------------------------------------------------------------
 // Build configuration
 // ----------------------------------------------------------------------------
-#define FW_VERSION        "1.0.0"
+#define FW_VERSION        "1.1.0"
 #define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
 #define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
 #define SAMPLE_HZ         500         // internal fusion rate
@@ -50,6 +50,17 @@
 
 // High-pass corner for the vibration metric (first order), Hz
 #define VIB_HP_HZ         8.0f
+
+// Stillness detector + background gyro-bias learning (rig parked / standing still)
+#define STILL_WIN         250         // samples per window (0.5 s @ 500 Hz)
+#define STILL_WINDOWS     4           // consecutive still windows before "still" (2 s)
+#define STILL_GYRO_PP_DPS 1.5f        // max peak-to-peak gyro per axis inside a window
+#define STILL_ACC_G       0.03f       // max | |a| - 1 g | inside a window
+#define STILL_TILT_DEG    0.10f       // max gravity-direction change between windows (rejects slow rotation)
+#define BIAS_ALPHA        0.25f       // blend of each new still-window mean into the bias
+#define BIAS_MAX_STEP_DPS 0.25f       // max bias change per window (slew limit)
+#define BIAS_MAX_ABS_DPS  8.0f        // never learn a bias larger than this
+#define BIAS_SAVE_MS      600000UL    // EEPROM write at most every 10 min (first one right away)
 
 // ----------------------------------------------------------------------------
 // MPU-6050 registers
@@ -80,6 +91,7 @@
 #define F_WHOAMI_ODD   0x10
 #define F_DROPPED      0x20
 #define F_GATED        0x40   // accel correction was gated off for most of the window
+#define F_STILL        0x80   // stillness detector: rig has been still for >= 2 s
 
 // ----------------------------------------------------------------------------
 // Persistent settings
@@ -90,9 +102,10 @@ struct Persist {
   uint8_t  dlpf;
   uint8_t  outDiv;
   uint8_t  calibrated;
+  uint8_t  autoCal;       // learn gyro bias whenever the rig is still
   uint8_t  crc;
 };
-static const uint16_t PERSIST_MAGIC = 0xAD01;
+static const uint16_t PERSIST_MAGIC = 0xAD02;
 static Persist P;
 
 // ----------------------------------------------------------------------------
@@ -119,6 +132,18 @@ static uint8_t wFlags;
 static float   hpPrev[3], hpOut[3];      // high-pass filter state (accel, g)
 static float   hpAlpha;
 
+// stillness detector state
+static float   sAcc[3], sGyr[3], sGmin[3], sGmax[3], sAccDevMax;
+static float   sPrevAcc[3];
+static bool    sPrevValid = false;
+static uint16_t sN = 0;
+static uint8_t sStillWindows = 0;
+static bool    isStill = false;
+static bool    biasDirty = false;
+static bool    biasSavedOnce = false;
+static uint32_t lastBiasSaveMs = 0;
+static uint16_t biasUpdates = 0;
+
 // command line buffer
 static char    cmdBuf[40];
 static uint8_t cmdLen = 0;
@@ -143,6 +168,7 @@ static void persistDefaults() {
   P.dlpf = DEFAULT_DLPF;
   P.outDiv = DEFAULT_OUT_DIV;
   P.calibrated = 0;
+  P.autoCal = 1;
 }
 static void persistLoad() {
   EEPROM.get(0, P);
@@ -241,6 +267,7 @@ static void emitImuFrame() {
   if (P.calibrated) f |= F_GYRO_CAL;
   if (whoAmI != 0x68) f |= F_WHOAMI_ODD;
   if (wGatedN > wN / 2) f |= F_GATED;
+  if (isStill) f |= F_STILL;
   *p++ = f;
   *p++ = (uint8_t)min(droppedFrames, (uint16_t)255);
   sendFrame(T_IMU, buf, (uint8_t)(p - buf));
@@ -310,6 +337,77 @@ static bool readRaw(float &ax, float &ay, float &az, float &gx, float &gy, float
   return true;
 }
 
+// ----------------------------------------------------------------------------
+// Stillness detector + background gyro-bias learning.
+// A window is "still" when the gyro barely moves (peak-to-peak), |a| stays ~1 g and the
+// gravity direction did not turn since the previous window (so a slow tilt is never learned
+// as bias). After STILL_WINDOWS still windows in a row the rig counts as still and every
+// further still window nudges the bias towards that window's mean raw gyro reading.
+// ----------------------------------------------------------------------------
+static void stillReset() {
+  for (uint8_t i = 0; i < 3; i++) { sAcc[i] = 0; sGyr[i] = 0; sGmin[i] = 1e9f; sGmax[i] = -1e9f; }
+  sAccDevMax = 0; sN = 0;
+}
+
+static void stillUpdate(float ax, float ay, float az, float gx, float gy, float gz, float an) {
+  const float d2r = 0.01745329f;
+  float raw[3] = { gx + P.gbias[0], gy + P.gbias[1], gz + P.gbias[2] };   // undo current bias
+  float a[3] = { ax, ay, az };
+  for (uint8_t i = 0; i < 3; i++) {
+    sAcc[i] += a[i]; sGyr[i] += raw[i];
+    if (raw[i] < sGmin[i]) sGmin[i] = raw[i];
+    if (raw[i] > sGmax[i]) sGmax[i] = raw[i];
+  }
+  float dev = fabsf(an - 1.0f);
+  if (dev > sAccDevMax) sAccDevMax = dev;
+  if (++sN < STILL_WIN) return;
+
+  // ---- window complete ----
+  float m[3], g[3];
+  bool still = sAccDevMax < STILL_ACC_G;
+  for (uint8_t i = 0; i < 3; i++) {
+    m[i] = sAcc[i] / STILL_WIN;
+    g[i] = sGyr[i] / STILL_WIN;
+    if (sGmax[i] - sGmin[i] > STILL_GYRO_PP_DPS * d2r) still = false;
+    if (fabsf(g[i]) > BIAS_MAX_ABS_DPS * d2r) still = false;
+  }
+  if (sPrevValid) {
+    // angle between this window's and the previous window's gravity vector
+    float cx = m[1] * sPrevAcc[2] - m[2] * sPrevAcc[1];
+    float cy = m[2] * sPrevAcc[0] - m[0] * sPrevAcc[2];
+    float cz = m[0] * sPrevAcc[1] - m[1] * sPrevAcc[0];
+    float n1 = sqrtf(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+    float n2 = sqrtf(sPrevAcc[0] * sPrevAcc[0] + sPrevAcc[1] * sPrevAcc[1] + sPrevAcc[2] * sPrevAcc[2]);
+    float s = sqrtf(cx * cx + cy * cy + cz * cz) / (n1 * n2 + 1e-9f);
+    if (s > sinf(STILL_TILT_DEG * d2r)) still = false;
+  } else still = false;
+  for (uint8_t i = 0; i < 3; i++) sPrevAcc[i] = m[i];
+  sPrevValid = true;
+
+  if (still) { if (sStillWindows < 255) sStillWindows++; }
+  else sStillWindows = 0;
+  isStill = sStillWindows >= STILL_WINDOWS;
+
+  if (isStill && P.autoCal) {
+    const float maxStep = BIAS_MAX_STEP_DPS * d2r;
+    for (uint8_t i = 0; i < 3; i++) {
+      float step = BIAS_ALPHA * (g[i] - P.gbias[i]);
+      if (step > maxStep) step = maxStep;
+      if (step < -maxStep) step = -maxStep;
+      P.gbias[i] += step;
+    }
+    P.calibrated = 1;
+    biasDirty = true;
+    biasUpdates++;
+    uint32_t now = millis();
+    if (!biasSavedOnce || now - lastBiasSaveMs > BIAS_SAVE_MS) {
+      persistSave();                       // ~1 write per boot + 1 per 10 min parked: fine for EEPROM
+      lastBiasSaveMs = now; biasSavedOnce = true; biasDirty = false;
+    }
+  }
+  stillReset();
+}
+
 static void sampleOnce(float dt) {
   float ax, ay, az, gx, gy, gz;
   uint8_t sat;
@@ -320,6 +418,7 @@ static void sampleOnce(float dt) {
   bool useAcc = (an > ACC_GATE_LO && an < ACC_GATE_HI);
   if (!useAcc) wGatedN++;
   mahony(gx, gy, gz, ax, ay, az, dt, useAcc);
+  stillUpdate(ax, ay, az, gx, gy, gz, an);
 
   // vibration: first-order high-pass per axis, magnitude squared
   float vib = 0;
@@ -365,6 +464,7 @@ static void gyroCal() {
     return;
   }
   P.gbias[0] = sx / N; P.gbias[1] = sy / N; P.gbias[2] = sz / N;
+  stillReset(); sPrevValid = false; sStillWindows = 0;
   P.calibrated = 1;
   persistSave();
   sendText("OK GYROCAL");
@@ -373,14 +473,14 @@ static void gyroCal() {
 // ----------------------------------------------------------------------------
 // Commands (ASCII, newline terminated)
 //   PING | INFO | GYROCAL | DLPF n (0..6) | ODR n (out divider 1..50)
-//   STREAM 0|1 | DEFAULTS | REBOOT
+//   STREAM 0|1 | DEFAULTS | REBOOT | AUTOCAL 0|1 | BIAS
 // ----------------------------------------------------------------------------
 static void handleCmd(char *c) {
   char out[60];
   if (!strcmp(c, "PING")) { sendText("PONG"); }
   else if (!strcmp(c, "INFO")) {
-    snprintf(out, sizeof(out), "INFO fw=%s who=0x%02X fs=%d out=%d dlpf=%d cal=%d",
-             FW_VERSION, whoAmI, SAMPLE_HZ, SAMPLE_HZ / P.outDiv, P.dlpf, P.calibrated);
+    snprintf(out, sizeof(out), "INFO fw=%s who=0x%02X out=%d dlpf=%d cal=%d auto=%d",
+             FW_VERSION, whoAmI, SAMPLE_HZ / P.outDiv, P.dlpf, P.calibrated, P.autoCal);
     sendText(out);
   }
   else if (!strcmp(c, "GYROCAL")) { gyroCal(); }
@@ -397,6 +497,14 @@ static void handleCmd(char *c) {
   else if (!strncmp(c, "STREAM ", 7)) { streaming = c[7] == '1'; sendText("OK STREAM"); }
   else if (!strcmp(c, "DEFAULTS")) { persistDefaults(); persistSave(); i2cOk = mpuInit(); sendText("OK DEFAULTS"); }
   else if (!strcmp(c, "REBOOT")) { sendText("OK REBOOT"); Serial.flush(); wdt_enable(WDTO_15MS); for (;;) {} }
+  else if (!strncmp(c, "AUTOCAL ", 8)) { P.autoCal = c[8] == '1'; persistSave(); sendText(P.autoCal ? "OK AUTOCAL 1" : "OK AUTOCAL 0"); }
+  else if (!strcmp(c, "BIAS")) {
+    // bias in 0.001 deg/s, plus how many still windows updated it since boot
+    snprintf(out, sizeof(out), "BIAS %ld %ld %ld n=%u still=%d",
+             lroundf(P.gbias[0] * 57295.78f), lroundf(P.gbias[1] * 57295.78f), lroundf(P.gbias[2] * 57295.78f),
+             biasUpdates, isStill ? 1 : 0);
+    sendText(out);
+  }
   else sendText("ERR unknown");
 }
 
@@ -423,6 +531,7 @@ void setup() {
   float rc = 1.0f / (2.0f * PI * VIB_HP_HZ);
   hpAlpha = rc / (rc + dt);
 
+  stillReset();
   i2cOk = mpuInit();
   if (i2cOk) {
     float ax, ay, az, gx, gy, gz; uint8_t s;

@@ -22,7 +22,9 @@ namespace SimSpares.AdaptiveMotion.Core
     public enum ImuFlags : byte
     {
         None = 0, I2cError = 0x01, GyroCalibrated = 0x02, AccelSaturated = 0x04,
-        GyroSaturated = 0x08, WhoAmIUnexpected = 0x10, Dropped = 0x20, AccelGated = 0x40
+        GyroSaturated = 0x08, WhoAmIUnexpected = 0x10, Dropped = 0x20, AccelGated = 0x40,
+        /// <summary>Firmware stillness detector: rig still for at least 2 s (gyro bias is being learned).</summary>
+        Still = 0x80
     }
 
     /// <summary>One decoded IMU window, sensor frame, SI-ish units.</summary>

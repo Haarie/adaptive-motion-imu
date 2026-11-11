@@ -45,8 +45,12 @@ struct FakeSerial {
   explicit operator bool() { return true; }
 } Serial;
 
-// fake MPU: rolled 45° about X, at rest
+// fake MPU: rolled 45° about X (optionally rotating), with an optional gyro bias on X
 static uint8_t g_reg = 0;
+static double g_biasDps = 0.0;      // gyro zero-offset the sensor reports at rest
+static double g_rateDps = 0.0;      // true rotation rate about X (rig slowly moving)
+static double g_noiseDps = 0.0;     // +/- uniform gyro noise
+static double rollNowDeg() { return 45.0 + g_rateDps * (g_us / 1e6); }
 static std::vector<uint8_t> g_rx;
 static size_t g_rxi = 0;
 static int16_t accRaw(double g) { return (int16_t)lround(g * 8192.0); }   // ±4 g
@@ -60,8 +64,9 @@ struct FakeWire {
     g_rx.clear(); g_rxi = 0;
     if (g_reg == 0x75) { g_rx.push_back(0x68); }
     else if (g_reg == 0x3B) {
-      double s = sin(45 * PI / 180), c = cos(45 * PI / 180);
-      int16_t v[7] = { 0, accRaw(s), accRaw(c), 0, 0, 0, 0 };
+      double r = rollNowDeg() * PI / 180, s = sin(r), c = cos(r);
+      double gx = g_biasDps + g_rateDps + g_noiseDps * ((rand() / (double)RAND_MAX) * 2 - 1);
+      int16_t v[7] = { 0, accRaw(s), accRaw(c), 0, (int16_t)lround(gx * 65.5), 0, 0 };   // ±500 dps
       for (int i = 0; i < 7; i++) { g_rx.push_back((uint8_t)(v[i] >> 8)); g_rx.push_back((uint8_t)v[i]); }
     }
     while (g_rx.size() < n) g_rx.push_back(0);
@@ -80,7 +85,18 @@ struct FakeEEPROM {
 
 #include "../AdaptiveMotionIMU/AdaptiveMotionIMU.ino"
 
+// Scenario mode: ./host_test bias <bias_dps> <rate_dps> <seconds> -> prints learned bias (deg/s) and still flag
+static int scenario(double bias, double rate, double secs) {
+  g_biasDps = bias; g_rateDps = rate; g_noiseDps = 0.3;
+  setup();
+  uint32_t end = g_us + (uint32_t)(secs * 1e6);
+  while (g_us < end) { g_us += 100; loop(); }
+  printf("learned=%.3f still=%d updates=%u\n", P.gbias[0] * 57.29578, isStill ? 1 : 0, biasUpdates);
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  if (argc > 4 && !strcmp(argv[1], "bias")) return scenario(atof(argv[2]), atof(argv[3]), atof(argv[4]));
   setup();
   // run until 3 IMU frames (type 0x01) were emitted
   int frames = 0;

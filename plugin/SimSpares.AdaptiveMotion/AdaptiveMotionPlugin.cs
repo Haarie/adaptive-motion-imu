@@ -26,6 +26,8 @@ namespace SimSpares.AdaptiveMotion
         internal AdaptiveGainController Controller;
         internal readonly LagEstimator PitchTracking = new LagEstimator();
         internal readonly LagEstimator RollTracking = new LagEstimator();
+        internal ParkMonitor Park;
+        private volatile bool _gameRunning;
 
         // --- latest data (written on the IMU thread, read on SimHub/UI threads) -------------------
         private readonly object _stateLock = new object();
@@ -52,9 +54,31 @@ namespace SimSpares.AdaptiveMotion
         {
             Settings = this.ReadCommonSettings<AdaptiveMotionSettings>("GeneralSettings", () => new AdaptiveMotionSettings());
             Controller = new AdaptiveGainController(Settings.Controller);
+            Park = new ParkMonitor(Settings.Park);
+            if (Settings.ParkReferenceLearned) Park.SetReference(Settings.ParkPitchDeg, Settings.ParkRollDeg);
+            Park.ReferenceLearned += (p, r) =>
+            {
+                Settings.ParkReferenceLearned = true; Settings.ParkPitchDeg = p; Settings.ParkRollDeg = r;
+                SaveSettings();
+                Note(string.Format("Parked pose learned: pitch {0:F2}°, roll {1:F2}°", p, r));
+            };
+            Park.Checked += (dev, shifted) =>
+            {
+                if (shifted) { Note(string.Format("MOUNT SHIFTED? Parked pose is {0:F2}° off the reference", dev)); this.TriggerEvent("MountShifted"); }
+                this.TriggerEvent("ParkChecked");
+            };
 
             Imu.Frame += OnImuFrame;
-            Imu.Text += t => { if (t.StartsWith("INFO")) _deviceInfo = t; Note("Device: " + t); };
+            Imu.Text += t =>
+            {
+                if (t.StartsWith("INFO"))
+                {
+                    _deviceInfo = t;
+                    // keep the firmware's auto-calibration in line with the setting after every (re)connect
+                    if (t.Contains("auto=") && t.Contains("auto=1") != Settings.AutoGyroCal) Imu.Send("AUTOCAL " + (Settings.AutoGyroCal ? "1" : "0"));
+                }
+                Note("Device: " + t);
+            };
             Imu.Log += Note;
             Proxy.Log += Note;
             Proxy.CommandModes += (p, r) => { _cmdPitch = (float)p; _cmdRoll = (float)r; };
@@ -74,6 +98,8 @@ namespace SimSpares.AdaptiveMotion
             catch (Exception e) { Note("Mounting: " + e.Message); }
             if (Settings.LevelCaptured) Estimator.SetLevelReference(Settings.LevelPitchDeg, Settings.LevelRollDeg);
             Controller.UpdateSettings(Settings.Controller);
+            Park.UpdateSettings(Settings.Park);
+            if (Imu.Connected) Imu.Send("AUTOCAL " + (Settings.AutoGyroCal ? "1" : "0"));
 
             if (Imu.PortName != Settings.ComPort || !Imu.Connected) Imu.Start(Settings.ComPort);
 
@@ -110,7 +136,11 @@ namespace SimSpares.AdaptiveMotion
                 if (now >= _levelUntil) FinishLevelCapture();
             }
 
-            if (Settings.LevelCaptured) Controller.Update(st);
+            if (Settings.LevelCaptured)
+            {
+                Controller.Update(st);
+                Park.Update(st, _gameRunning);
+            }
             PitchTracking.Push(_cmdPitch, st.PitchDeg);
             RollTracking.Push(_cmdRoll, st.RollDeg);
 
@@ -134,6 +164,9 @@ namespace SimSpares.AdaptiveMotion
                 Settings.LevelRollDeg = _levelSumR / _levelN;
                 Settings.LevelCaptured = true;
                 Estimator.SetLevelReference(Settings.LevelPitchDeg, Settings.LevelRollDeg);
+                // angles are now measured against a new level: the stored parked pose is meaningless
+                Settings.ParkReferenceLearned = false;
+                Park.ClearReference();
                 SaveSettings();
                 Note(string.Format("Level captured: pitch {0:F2}°, roll {1:F2}°", Settings.LevelPitchDeg, Settings.LevelRollDeg));
             }
@@ -147,6 +180,7 @@ namespace SimSpares.AdaptiveMotion
         public void DataUpdate(PluginManager pluginManager, ref GameData data)
         {
             double now = ImuSerialLink.NowSec;
+            _gameRunning = data.GameRunning;
             Controller.Tick(now);
 
             if (!double.IsNaN(_neutralUntil) && now >= _neutralUntil)
@@ -228,6 +262,11 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Tracking.RollDelayMs", () => RollTracking.Valid ? Math.Round(RollTracking.DelayMs, 0) : -1);
             this.AttachDelegate("Tracking.RollCoherence", () => Math.Round(RollTracking.Coherence, 2));
 
+            this.AttachDelegate("Sensor.Still", () => (State.Flags & ImuFlags.Still) != 0);
+            this.AttachDelegate("Park.State", () => Park.State.ToString());
+            this.AttachDelegate("Park.ReferenceLearned", () => Park.HasReference);
+            this.AttachDelegate("Park.DeviationDeg", () => double.IsNaN(Park.LastDeviationDeg) ? -1 : Math.Round(Park.LastDeviationDeg, 2));
+            this.AttachDelegate("Park.MountShifted", () => Park.MountShifted);
             this.AttachDelegate("Proxy.Forwarded", () => Proxy.Forwarded);
             this.AttachDelegate("Proxy.Active", () => ProxyActive);
             this.AttachDelegate("LastMessage", () => _lastMessage);
@@ -239,6 +278,8 @@ namespace SimSpares.AdaptiveMotion
             this.AddEvent("Impact");
             this.AddEvent("GainDownRequest"); // map to SimHub Motion "decrease global gain" in Controls & events
             this.AddEvent("GainUpRequest");   // map to SimHub Motion "increase global gain"
+            this.AddEvent("MountShifted");    // parked pose differs from the learned one: check the IMU box / homing
+            this.AddEvent("ParkChecked");
 
             this.AddAction("ToggleAdaptive", (a, b) => { Settings.AdaptiveEnabled = !Settings.AdaptiveEnabled; Note("Adaptive " + (Settings.AdaptiveEnabled ? "ON" : "OFF")); });
             this.AddAction("CaptureLevel", (a, b) => StartLevelCapture());
@@ -246,6 +287,8 @@ namespace SimSpares.AdaptiveMotion
             this.AddAction("ResetTrip", (a, b) => { Controller.ResetTrip(); Note("Trip reset"); });
             this.AddAction("ResetGains", (a, b) => { Controller.ResetGains(); Note("Gains reset"); });
             this.AddAction("CaptureNeutral", (a, b) => StartNeutralCapture());
+            this.AddAction("RelearnParkPose", (a, b) => RelearnParkPose());
+            this.AddAction("ShowGyroBias", (a, b) => Imu.Send("BIAS"));
         }
 
         public void StartLevelCapture()
@@ -253,6 +296,15 @@ namespace SimSpares.AdaptiveMotion
             _levelSumP = _levelSumR = 0; _levelN = 0;
             _levelUntil = ImuSerialLink.NowSec + 1.5;
             Note("Capturing level for 1.5 s — keep the rig parked at its centre position");
+        }
+
+        /// <summary>Forget the parked pose; it is learned again at the next park (use after re-mounting the box).</summary>
+        public void RelearnParkPose()
+        {
+            Settings.ParkReferenceLearned = false;
+            Park.ClearReference();
+            SaveSettings();
+            Note("Parked pose cleared — it will be learned at the next park");
         }
 
         public void StartNeutralCapture()

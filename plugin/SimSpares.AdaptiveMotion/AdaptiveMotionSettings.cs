@@ -24,6 +24,13 @@ namespace SimSpares.AdaptiveMotion
         public double LevelRollDeg = 0;
         public int DeviceDlpf = 3;
         public int DeviceOutputDivider = 2;
+        public bool AutoGyroCal = true;          // firmware learns gyro bias whenever the rig is still
+
+        // --- park check (warns when the parked pose moved: IMU box shifted / rig parked elsewhere) ---
+        public ParkSettings Park = new ParkSettings();
+        public bool ParkReferenceLearned = false;
+        public double ParkPitchDeg = 0;
+        public double ParkRollDeg = 0;
 
         // --- behaviour ----------------------------------------------------------------------
         public ApplyMode Mode = ApplyMode.MonitorOnly;

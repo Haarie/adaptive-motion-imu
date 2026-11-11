@@ -43,8 +43,12 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Row("Sensor axis pointing up", EnumBox(s.MountUp, v => s.MountUp = v)));
             root.Children.Add(Row("Device DLPF (0-6)", IntBox(s.DeviceDlpf, v => s.DeviceDlpf = v)));
             root.Children.Add(Row("Device output divider (500/n Hz)", IntBox(s.DeviceOutputDivider, v => s.DeviceOutputDivider = v)));
+            root.Children.Add(Row("Learn gyro bias whenever still", Check(s.AutoGyroCal, v => s.AutoGyroCal = v)));
+            root.Children.Add(Row("Park check tolerance (deg)", Num(s.Park.ToleranceDeg, v => s.Park.ToleranceDeg = v)));
             root.Children.Add(Buttons(
-                Btn("Capture level (rig parked)", () => _p.StartLevelCapture()),
+                Btn("Capture level (rig at centre)", () => _p.StartLevelCapture()),
+                Btn("Re-learn parked pose", () => _p.RelearnParkPose()),
+                Btn("Show gyro bias", () => _p.Imu.Send("BIAS")),
                 Btn("Gyro calibrate (rig still)", () => _p.Imu.Send("GYROCAL")),
                 Btn("Send DLPF/ODR to device", () => { _p.Imu.Send("DLPF " + s.DeviceDlpf); _p.Imu.Send("ODR " + s.DeviceOutputDivider); _p.Imu.Send("INFO"); }),
                 Btn("Ping", () => _p.Imu.Send("PING"))));
@@ -119,7 +123,8 @@ namespace SimSpares.AdaptiveMotion
                 "Levels   pitch {13:F2}  roll {14:F2}  heave {15:F2}  cue {16:F2}\n" +
                 "Gains    global {17:F2}  pitch {18:F2}  roll {19:F2}  heave {20:F2}   [{21}]  impacts {22}\n" +
                 "Tracking pitch {23} ms (r={24:F2}, {25:F1}°/unit)   roll {26} ms (r={27:F2})\n" +
-                "Proxy    {28}  fwd {29}  axes [{30}]",
+                "Proxy    {28}  fwd {29}  axes [{30}]\n" +
+                "Park     {31}  still {32}  ref {33}  last dev {34}°  {35}",
                 _p.Imu.Connected ? "connected" : "NOT connected", _p.FrameRate, _p.Imu.Parser.CrcErrors, _p.DeviceInfo,
                 st.PitchDeg, st.RollDeg, st.PitchRateDps, st.RollRateDps,
                 st.CueSurgeG, st.CueSwayG, st.CueHeaveG, st.PeakDevG, st.VibRmsG,
@@ -127,7 +132,11 @@ namespace SimSpares.AdaptiveMotion
                 g.Global, g.Pitch, g.Roll, g.Heave, g.Status, _p.Controller.ImpactCount,
                 _p.PitchTracking.Valid ? _p.PitchTracking.DelayMs.ToString("F0") : "--", _p.PitchTracking.Coherence, _p.PitchTracking.Scale,
                 _p.RollTracking.Valid ? _p.RollTracking.DelayMs.ToString("F0") : "--", _p.RollTracking.Coherence,
-                _p.ProxyActive ? "APPLYING" : (_p.Proxy.Running ? "passthrough" : "off"), _p.Proxy.Forwarded, axes);
+                _p.ProxyActive ? "APPLYING" : (_p.Proxy.Running ? "passthrough" : "off"), _p.Proxy.Forwarded, axes,
+                _p.Park.State, (st.Flags & ImuFlags.Still) != 0 ? "yes" : "no",
+                _p.Park.HasReference ? string.Format(CultureInfo.InvariantCulture, "{0:F2}/{1:F2}", _p.Park.RefPitchDeg, _p.Park.RefRollDeg) : "not learned",
+                double.IsNaN(_p.Park.LastDeviationDeg) ? "--" : _p.Park.LastDeviationDeg.ToString("F2", CultureInfo.InvariantCulture),
+                _p.Park.MountShifted ? "MOUNT SHIFTED" : "");
             _msg.Text = _p.LastMessage;
         }
 

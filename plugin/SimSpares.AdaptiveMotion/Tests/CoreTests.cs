@@ -22,6 +22,7 @@ static class CoreTests
         ScalerTests();
         PacketTests();
         LagTests();
+        ParkTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -300,5 +301,56 @@ static class CoreTests
             le.Push(x, 3.5 * delayed + (rnd.NextDouble() - 0.5) * 0.01);
         }
         Check(le.Valid && Near(le.DelayMs, 40, 4.1) && Near(le.Scale, 3.5, 0.2), $"lag estimator delay={le.DelayMs} r={le.Coherence:F3} scale={le.Scale:F2}");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    static void ParkTests()
+    {
+        var pm = new ParkMonitor(new ParkSettings());
+        double t = 0;
+        double learnedP = double.NaN; int checks = 0; bool lastShifted = false;
+        pm.ReferenceLearned += (p, r) => learnedP = p;
+        pm.Checked += (d, sh) => { checks++; lastShifted = sh; };
+        Action<double, double, bool, bool, double> run = (pitch, roll, still, game, secs) =>
+        {
+            for (int i = 0; i < secs * 250; i++)
+            {
+                t += 0.004;
+                pm.Update(new PlatformState { PitchDeg = pitch, RollDeg = roll, TimeSec = t, Flags = still ? ImuFlags.Still : ImuFlags.None }, game);
+            }
+        };
+
+        run(-3.0, 0.2, true, true, 10);     // still but a game is running: never a park check
+        Check(pm.State == ParkState.Moving && !pm.HasReference, "no park check while a game runs");
+
+        run(-3.0, 0.2, true, false, 4);     // first park: learn reference
+        Check(pm.HasReference && Near(learnedP, -3.0, 1e-6) && pm.State == ParkState.Parked, "first park learns the parked pose");
+
+        run(0, 0, false, false, 2);         // drive / move
+        run(-3.2, 0.3, true, false, 4);     // park again, 0.22 deg off: OK
+        Check(checks == 1 && !lastShifted && !pm.MountShifted && Near(pm.LastDeviationDeg, 0.2236, 0.001), "small difference passes");
+
+        run(0, 0, false, false, 2);
+        run(-2.0, 0.2, true, false, 4);     // 1 deg off: box shifted
+        Check(checks == 2 && lastShifted && pm.MountShifted, "1 deg difference flags MountShifted");
+        Check(Near(pm.RefPitchDeg, -3.0, 1e-9), "reference is never overwritten by a check");
+
+        run(-2.0, 0.2, true, false, 10);    // staying parked: no repeated checks
+        Check(checks == 2, "one check per park");
+
+        pm.ClearReference();
+        Check(!pm.HasReference && !pm.MountShifted, "clear reference resets warning");
+        run(-2.0, 0.2, true, false, 4);     // still parked -> re-measures and learns the new pose
+        Check(pm.HasReference && Near(pm.RefPitchDeg, -2.0, 1e-6), "re-learn after clear, " + pm.RefPitchDeg);
+
+        // brief stillness shorter than settle + average never completes a check
+        var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;
+        pm2.ReferenceLearned += (p, r) => c2++;
+        for (int k = 0; k < 10; k++)
+        {
+            for (int i = 0; i < 500; i++) { t2 += 0.004; pm2.Update(new PlatformState { TimeSec = t2, Flags = ImuFlags.Still }, false); }   // 2 s still
+            for (int i = 0; i < 50; i++) { t2 += 0.004; pm2.Update(new PlatformState { TimeSec = t2 }, false); }
+        }
+        Check(c2 == 0, "short still periods (red lights, pauses < 3 s) don't count as park");
     }
 }

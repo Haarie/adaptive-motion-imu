@@ -30,11 +30,12 @@ Opening the port at **1200 baud** resets a 32U4 into its bootloader, so never us
 | 29 | u8 | — | dropped-frame counter (saturating) |
 
 Flags: `0x01` I2C error · `0x02` gyro calibrated · `0x04` accel saturated · `0x08` gyro saturated ·
-`0x10` WHO_AM_I ≠ 0x68 (clone die) · `0x20` frames dropped (host too slow) · `0x40` accel tilt correction gated (>50 % of window).
+`0x10` WHO_AM_I ≠ 0x68 (clone die) · `0x20` frames dropped (host too slow) · `0x40` accel tilt correction gated (>50 % of window) ·
+`0x80` still: the rig has been still for ≥ 2 s (and, with AUTOCAL on, the gyro bias is being refined).
 
 ### Text payload (type 0x02)
 ASCII, no terminator, ≤ 60 bytes. Replies to commands, e.g. `PONG`, `OK GYROCAL`, `ERR GYROCAL motion`,
-`INFO fw=1.0.0 who=0x68 fs=500 out=250 dlpf=3 cal=1`.
+`INFO fw=1.1.0 who=0x68 out=250 dlpf=3 cal=1 auto=1`, `BIAS 1994 -12 35 n=36 still=1`.
 
 ## Commands (host → device)
 ASCII lines terminated by `\n`.
@@ -49,3 +50,12 @@ ASCII lines terminated by `\n`.
 | `STREAM 0/1` | pause / resume IMU frames |
 | `DEFAULTS` | factory settings |
 | `REBOOT` | watchdog reset |
+| `AUTOCAL 0/1` | background gyro-bias learning while still (default on). Saved. |
+| `BIAS` | current gyro bias in 0.001 °/s, number of still-window updates since boot, still flag |
+
+## Background gyro-bias learning (fw 1.1)
+Every 0.5 s window is "still" when: gyro peak-to-peak < 1.5 °/s per axis, | |a| − 1 g | < 0.03 g, and the gravity
+direction turned < 0.1° since the previous window (so a slow tilt is never learned as bias; yaw can't be checked).
+After 4 still windows in a row (2 s) the `still` flag is set and each further window blends 25 % of its mean raw
+gyro into the bias (max 0.25 °/s per step, |bias| ≤ 8 °/s). The bias is saved to EEPROM once per boot and then at
+most every 10 min. Resolution: a rotation slower than ~0.2 °/s about a horizontal axis is indistinguishable from bias.
