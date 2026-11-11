@@ -8,7 +8,7 @@
 //
 // Render parts:  openscad -D 'part="base"'  -o base.stl  adaptive_motion_imu_enclosure.scad
 //                openscad -D 'part="lid"'   -o lid.stl   ...
-//                openscad -D 'part="inlay"' -o lid_inlay.stl ...   (second colour on the MMU3)
+//                openscad -D 'part="inlay_green"' -o lid_inlay_green.stl ...  (+ inlay_orange, inlay_white: MMU3 colours)
 //                openscad -D 'part="assembly"' -o preview.stl ...
 //
 // MEASURE YOUR BOARDS WITH CALIPERS and adjust the "board" section — clone boards vary ±0.5 mm.
@@ -85,27 +85,61 @@ module rounded_box(l, w, h, r = 2) {
     hull() for (x = [r, l - r], y = [r, w - r]) translate([x, y, 0]) cylinder(r = r, h = h);
 }
 
+use <fonts/Rajdhani-Bold.ttf>     // Sim-Spares brand font (SIL OFL, bundled)
+BRAND_FONT = "Rajdhani:style=Bold";
+logo_d = 22;            // steering-wheel logo size on the lid, mm
+
+// ---- Sim-Spares steering-wheel logo (same geometry as the website's SVG, 100 x 100 units, y down) ----
+function svgp(p) = [p[0] - 50, 50 - p[1]];                         // SVG -> centred, y up
+function arc(c, r, a0, a1, n = 36) = [ for (i = [0 : n]) let(a = a0 + (a1 - a0) * i / n) svgp([c[0] + r * cos(a), c[1] + r * sin(a)]) ];
+module stroke(pts, w) { for (i = [0 : len(pts) - 2]) hull() { translate(pts[i]) circle(d = w, $fn = 16); translate(pts[i + 1]) circle(d = w, $fn = 16); } }
+rim_pts = concat(arc([50, 50], 40, -90, 49.46, 48), arc([50, 64], 26, 0, -180, 36), arc([50, 50], 40, 130.54, 270, 48));
+module logo_green() { stroke(rim_pts, 6); difference() { circle(r = 12, $fn = 48); circle(r = 8, $fn = 48); } }
+module logo_orange() {
+    difference() {
+        for (m = [0, 1]) mirror([m, 0]) stroke(concat(arc([24.8, 44.0], 10, 191.5, 271.1, 12), [svgp([31, 34])]), 6);
+        logo_green();
+    }
+}
+module logo_white() {
+    difference() {
+        for (e = [[50, 18], [26, 64], [74, 64]]) stroke([svgp([50, 50]), svgp(e)], 5);
+        circle(r = 12, $fn = 48);
+        logo_green();
+    }
+}
+module logo2d(c) scale(logo_d / 100) {
+    if (c == "green") logo_green(); else if (c == "orange") logo_orange(); else if (c == "white") logo_white();
+}
+
 // Lid marking. On the "side" mount the box's long axis runs along the (transverse) beam, so the rig's
 // forward direction points out of the lid: the lid shows UP (away from the flange) instead.
 label = mount_style == "side" ? "up" : "fwd";
+arrow2d = [[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]];
 
-module text_label(depth) {
-    if (label == "up") {
-        // arrow pointing +Y (away from the mounting flange = up when the box sits above the slot)
-        short = outer_l < 85;   // compact nRF52840 box: tighter layout
-        translate([outer_l / 2 + (short ? -6 : 8), outer_w / 2, 0]) linear_extrude(depth)
-            rotate(90) translate([-10.5, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
-        translate([outer_l / 2 + (short ? -17 : -10), outer_w / 2, 0]) linear_extrude(depth)
-            text("UP", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
-        translate([outer_l / 2 + (short ? 16 : 30), outer_w / 2, 0]) linear_extrude(depth)
-            text("LID = FRONT", size = short ? 2.6 : 3.2, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
-    } else {
-        // arrow + text pointing to rig front (+X of the box)
-        translate([outer_l / 2 - 4, outer_w / 2, 0]) linear_extrude(depth) {
-            translate([-20, 0]) text("FWD", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
-            translate([4, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
+// 2D artwork per inlay colour: green = logo rim + hub, orange = paddles + direction, white = spokes + text
+module label2d(c) {
+    lx = logo_d / 2 + 2.5;                       // logo centre from the -X (USB) end
+    rx = (lx + logo_d / 2 + 1.5 + outer_l - 2.5) / 2;  // centre of the text column
+    translate([lx, outer_w / 2]) logo2d(c);
+    if (c == "white") {
+        translate([rx, outer_w / 2 + 5.4]) resize([outer_l - 2.5 - (lx + logo_d / 2 + 1.5), 0], auto = true)
+            text("SIM-SPARES.COM", size = 5, font = BRAND_FONT, halign = "center", valign = "center");
+        if (label == "up") translate([rx + 9.5, outer_w / 2 - 5.8]) text("LID = FRONT", size = 3.4, font = BRAND_FONT, halign = "center", valign = "center");
+    }
+    if (c == "orange") {
+        if (label == "up") {
+            translate([rx - 7, outer_w / 2 - 5.8]) rotate(90) scale(0.5) translate([-10.5, 0]) polygon(arrow2d);    // points +Y
+            translate([rx - 13.5, outer_w / 2 - 5.8]) text("UP", size = 4.6, font = BRAND_FONT, halign = "center", valign = "center");
+        } else {
+            translate([rx - 9, outer_w / 2 - 5.8]) text("FWD", size = 4.6, font = BRAND_FONT, halign = "center", valign = "center");
+            translate([rx + 1, outer_w / 2 - 5.8]) scale([0.75, 0.6]) polygon(arrow2d);                            // points +X
         }
     }
+}
+inlay_colours = ["green", "orange", "white"];
+module text_label(depth, c = "all") {
+    linear_extrude(depth) if (c == "all") for (k = inlay_colours) label2d(k); else label2d(c);
 }
 
 module base() {
@@ -224,7 +258,8 @@ module lid() {
     }
 }
 
-module inlay() { translate([0, 0, lid_t - 0.6]) text_label(0.6); }
+module inlay(c = "all") { translate([0, 0, lid_t - 0.6]) text_label(0.6, c); }
+module inlay_coloured() { for (k = inlay_colours) color(k == "green" ? "#A6FF4D" : k == "orange" ? "#FF7A29" : "#F3F5F1") inlay(k); }
 
 // ---------------- visual board models (for the fit pictures only, not printed) ------------
 // ProMicro pad order from the USB end. -Y edge ("left"): 0.06 0.08 GND GND 0.17 0.20 0.22 0.24 1.00 0.11 1.04 1.06
@@ -307,10 +342,15 @@ module wires_avr(dz = 0) {
 
 if (part == "base") base();
 else if (part == "lid") print_flip() lid();       // printed top face down
-else if (part == "inlay") print_flip() inlay();   // same coordinates as the lid -> load both as one object
+else if (part == "inlay") print_flip() inlay();   // all artwork in one body (single inlay colour)
+else if (part == "inlay_green" || part == "inlay_orange" || part == "inlay_white")
+    print_flip() inlay(part == "inlay_green" ? "green" : part == "inlay_orange" ? "orange" : "white");   // same coordinates as the lid -> load lid + 3 inlays as one object
 else if (part == "fit") {                          // boards installed, lid off
     color("SteelBlue") base();
     boards(); wires();
+}
+else if (part == "lid_preview") {                  // lid as installed, with coloured inlays
+    color("#2B302C") lid(); inlay_coloured();
 }
 else if (part == "mounted") {                      // on a vertical 40x40 profile, box across it
     profile_scene();
@@ -318,13 +358,13 @@ else if (part == "mounted") {                      // on a vertical 40x40 profil
 else if (part == "exploded") {                     // base, boards lifted 18 mm, lid lifted 42 mm
     color("SteelBlue") base();
     boards(18); wires(18);
-    color("Gainsboro") translate([0, 0, base_h + 42]) lid();
-    color("Orange") translate([0, 0, base_h + 42]) inlay();
+    color("#2B302C") translate([0, 0, base_h + 42]) lid();
+    translate([0, 0, base_h + 42]) inlay_coloured();
 }
 else {
     color("SteelBlue") base();
-    color("Gainsboro", 0.6) translate([0, 0, base_h + 12]) lid();
-    color("Orange") translate([0, 0, base_h + 12]) inlay();
+    color("#2B302C", 0.9) translate([0, 0, base_h + 12]) lid();
+    translate([0, 0, base_h + 12]) inlay_coloured();
     boards();
 }
 
@@ -346,8 +386,8 @@ module side_scene() {
     rotate([0, 90, 0]) profile40(240);
     rotate([90, 0, 0]) translate([-outer_l / 2, side_flange / 2 + 1, 0]) {
         color("SteelBlue") base();
-        color("Gainsboro") translate([0, 0, base_h]) lid();
-        color("Orange") translate([0, 0, base_h]) inlay();
+        color("#2B302C") translate([0, 0, base_h]) lid();
+        translate([0, 0, base_h]) inlay_coloured();
         for (x = [outer_l / 2 - side_pitch / 2, outer_l / 2 + side_pitch / 2]) translate([x, -side_flange / 2 - 1, 0]) {
             color("DimGray") translate([0, 0, plate_t]) cylinder(d = 10, h = 6);
             color("DimGray") translate([0, 0, -9]) cylinder(d = 6, h = plate_t + 9);
@@ -361,8 +401,8 @@ module upright_scene() {
     // box: its bottom on the profile face (y = 0), long axis horizontal, bolt line along the profile
     rotate([90, 0, 0]) translate([-outer_l / 2, -outer_w / 2, 0]) {
         color("SteelBlue") base();
-        color("Gainsboro") translate([0, 0, base_h]) lid();
-        color("Orange") translate([0, 0, base_h]) inlay();
+        color("#2B302C") translate([0, 0, base_h]) lid();
+        translate([0, 0, base_h]) inlay_coloured();
         for (y = [-bolt_off, outer_w + bolt_off]) translate([outer_l / 2, y, 0]) {
             color("DimGray") translate([0, 0, plate_t]) cylinder(d = 10, h = 6);                 // M6 head
             color("DimGray") translate([0, 0, -9]) cylinder(d = 6, h = plate_t + 9);             // shank

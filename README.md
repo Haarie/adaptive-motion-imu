@@ -26,7 +26,10 @@ plugin/SimSpares.AdaptiveMotion/
 plugin/tools/check.sh                       Mono: tests + stub compile + live-view preview render: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
 enclosure/
   adaptive_motion_imu_enclosure.scad        parametric source
-  base.stl, lid.stl, lid_inlay.stl          print-ready, sized for the ProMicro nRF52840 (board="micro" for the old Micro) (lid + inlay share coordinates for the MMU3)
+  base.stl, lid.stl                         print-ready, sized for the ProMicro nRF52840 (board="micro" for the old Micro)
+  lid_inlay_green/_orange/_white.stl        Sim-Spares logo + SIM-SPARES.COM + UP marking, one body per MMU3 colour
+  lid_inlay.stl                             the same artwork as one body (single inlay colour)
+  fonts/Rajdhani-Bold.ttf                   Sim-Spares brand font (SIL OFL), used by the SCAD (lid + inlay share coordinates for the MMU3)
   preview.png, preview_base.png
   fit_figure.py                             annotated fit picture -> docs/enclosure_fit.png (parts "fit" / "exploded")
 ```
@@ -82,6 +85,13 @@ Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. Print `base.st
 The box does not have to be square to the rig: use **Auto-align** (below).
 
 ![mounting](docs/enclosure_mounting.png)
+
+**Lid print (Prusa MK3.5S + MMU3):** load `lid.stl` and the three `lid_inlay_*.stl` together as one multi-part
+object (they share coordinates), lid in black/carbon PETG, inlays green #A6FF4D, orange #FF7A29, white #F3F5F1.
+The artwork is the bottom 0.6 mm (printed face-down on a textured or smooth sheet), so the colour changes
+only happen in the first three layers. Use 0.2 mm first layer and "Arachne" perimeters for the small text.
+
+![lid](docs/lid_artwork.png)
 
 ## Calibration
 - **Auto-align (any mounting angle)**: 1) rig at centre, still → *Auto-align 1: rest*; 2) pitch the rig
