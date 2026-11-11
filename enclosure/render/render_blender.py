@@ -36,7 +36,7 @@ def material(name, col, metal=0.0, rough=0.5, layer_lines=False, coat=0.0, aniso
     return m
 
 MATS = {
-    "profile":      material("Aluminium (anodised)", "#C2C6CA", metal=1.0, rough=0.42),
+    "profile":      material("Aluminium (black anodised)", "#1C1D20", metal=0.85, rough=0.36),
     "base":         material("PETG carbon grey", "#2A2E2C", rough=0.42, layer_lines=True),
     "lid":          material("PETG black", "#141615", rough=0.38, layer_lines=True),
     "inlay_green":  material("PETG green", "#A6FF4D", rough=0.38),
@@ -67,7 +67,7 @@ bpy.ops.mesh.primitive_plane_add(size=3.0, location=(0, 0.0, -0.075))
 floor = bpy.context.object; floor.name = "floor"
 bpy.ops.mesh.primitive_plane_add(size=2.0, location=(0, 0.16, 0.9), rotation=(math.radians(90), 0, 0))
 wall = bpy.context.object; wall.name = "wall"
-bg = material("Backdrop", "#303332", rough=0.9)
+bg = material("Backdrop", "#8E9390", rough=0.9)
 floor.data.materials.append(bg); wall.data.materials.append(bg)
 
 def area(name, loc, target, power, size, col=(1, 1, 1)):
@@ -88,7 +88,7 @@ w.node_tree.nodes["Background"].inputs[0].default_value = (0.55, 0.57, 0.6, 1); 
 
 # ---- camera ---------------------------------------------------------------------------------------
 cams = {   # view: (camera location, lens mm, look-at target)
-    "front": ((0.135, -0.255, 0.105), 66, T),
+    "front": ((0.135, -0.255, 0.105), 56, T),
     "close": ((0.105, -0.165, -0.030), 60, (0.0, -0.010, 0.006)),
 }
 loc, lens, T = cams.get(VIEW, cams["front"])

@@ -88,7 +88,7 @@ The box does not have to be square to the rig: use **Auto-align** (below).
 
 ![bolts](docs/enclosure_render_bolts.png)
 
-(Photo renders: `enclosure/render/render.sh` — OpenSCAD scene with DIN 912 M6 × 16 black-oxide bolts, DIN 125 washers,
+(Photo renders on a black-anodised 80×40 slot-8 profile, bolts in its lower slot: `enclosure/render/render.sh` — OpenSCAD scene with DIN 912 M6 × 16 black-oxide bolts, DIN 125 washers,
 slot-8 drop-in T-nuts, ISO 7380 M3 lid screws and a USB-C lead, rendered in Blender Cycles.)
 
 ![mounting](docs/enclosure_mounting.png)

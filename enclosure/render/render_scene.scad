@@ -69,7 +69,31 @@ module usb_cable() {
 module box_frame() rotate([90, 0, 0]) translate([-outer_l / 2, side_flange / 2 + 1, 0]) children();
 bolt_xy = [ for (x = [outer_l / 2 - side_pitch / 2, outer_l / 2 + side_pitch / 2]) [x, -side_flange / 2 - 1] ];
 
-if (rpart == "profile" || rpart == "all") rotate([0, 90, 0]) profile40(170);
+// ---------------- 80x40 slot-8 profile, 80 mm face vertical, box bolted into its lower slot ------
+profile_h = 80; profile_d = 40; profile_len = 170;
+slot_open = 8.2; slot_lip = 3.0; slot_under_w = 16; slot_depth = 12.2;
+profile_z0 = -20;                    // bottom of the profile (world Z): lower front slot at z = 0 = bolt line
+module slot_cut2d() {                // slot at the origin, opening facing -Y, cutting into +Y
+    translate([-slot_open / 2, -1]) square([slot_open, slot_lip + 1.01]);
+    polygon([[-slot_under_w / 2, slot_lip], [slot_under_w / 2, slot_lip], [slot_under_w / 2, slot_lip + 2.2],
+             [slot_open / 2 + 0.5, slot_depth], [-slot_open / 2 - 0.5, slot_depth], [-slot_under_w / 2, slot_lip + 2.2]]);
+    for (s = [-1, 1]) translate([s * slot_open / 2, 0]) rotate(45) square(1.0, center = true);   // entry chamfers
+}
+module profile8040_2d() {            // x = depth (world Y, front face at 0), y = height (world Z)
+    difference() {
+        offset(r = 1.5) offset(delta = -1.5) square([profile_d, profile_h]);
+        for (zc = [20, 60]) {
+            translate([0, zc]) rotate(-90) slot_cut2d();
+            translate([profile_d, zc]) rotate(90) slot_cut2d();
+            translate([profile_d / 2, zc]) circle(d = 6.8, $fn = 40);                       // core bores
+        }
+        translate([profile_d / 2, 0]) slot_cut2d();                                            // bottom
+        translate([profile_d / 2, profile_h]) rotate(180) slot_cut2d();                        // top
+        translate([profile_d / 2, 40]) circle(d = 10, $fn = 48);                                // centre cavity
+    }
+}
+module profile8040() rotate([90, 0, 90]) translate([0, profile_z0, -profile_len / 2]) linear_extrude(profile_len) profile8040_2d();
+if (rpart == "profile" || rpart == "all") profile8040();
 if (rpart == "base" || rpart == "all") box_frame() base();
 if (rpart == "lid" || rpart == "all") box_frame() translate([0, 0, base_h]) lid();
 for (c = ["green", "orange", "white"]) if (rpart == str("inlay_", c) || rpart == "all") box_frame() translate([0, 0, base_h]) inlay(c);
