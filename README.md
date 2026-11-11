@@ -16,7 +16,10 @@ plugin/SimSpares.AdaptiveMotion/
   SettingsControl.cs                        settings page (code-built WPF)
   Core/                                     SimHub-independent logic (tested)
   IO/                                       serial link + UDP proxy
-  Tests/CoreTests.cs                        50 tests: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
+  Tests/CoreTests.cs                        58 tests
+  UI/MotionVisualizer.cs                    live view (horizon, g-g, meters, gains, 10 s trend)
+  UI/VisualizerWindow.cs                    pop-out window for a second screen
+plugin/tools/check.sh                       Mono: tests + stub compile + live-view preview render: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
 enclosure/
   adaptive_motion_imu_enclosure.scad        parametric source
   base.stl, lid.stl, lid_inlay.stl            print-ready (lid + inlay share coordinates for the MMU3)
@@ -28,6 +31,19 @@ enclosure/
 2. Close SimHub. `cd plugin/SimSpares.AdaptiveMotion && dotnet build -c Release`
    (DLL is copied into the SimHub folder; run the shell as admin or pass `-p:DeployToSimHub=false` and copy by hand).
 3. Start SimHub → enable the plugin when asked → left menu "Adaptive Motion".
+
+## Live view
+SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a second screen / the rig display):
+
+![live view](docs/visualizer_preview.png)
+
+- **Attitude**: artificial horizon of the seat (pitch ladder, roll scale), yellow = comfort limit, red = hard trip.
+- **Horizontal cue**: g-g plot of the force felt in the seat with a 2 s trail; dashed ring = cue limit.
+- **Meters**: pitch/roll rate, heave cue, vibration RMS, peak |a|−1 g (impact threshold) and the impact count.
+- **Gains**: what the controller currently applies (red line = minimum gain).
+- **Last 10 s**: pitch and roll trend against the limits.
+- Header badges: controller status, mode, sensor rate, STILL, MOUNT SHIFTED, CLONE IMU, LEVEL NOT CAPTURED.
+(The preview image is rendered off-Windows through an SVG stand-in, so fonts differ slightly from SimHub.)
 
 ## Calibration
 - **Gyro bias** is learned automatically by the firmware whenever the rig is still for 2 s (AUTOCAL, on by default),

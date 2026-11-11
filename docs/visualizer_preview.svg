@@ -1,0 +1,206 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='900' height='540' viewBox='0 0 900 540'>
+<g transform='translate(0,0)'>
+<g transform='scale(1,1)'>
+<rect x='0' y='0' width='900' height='540' rx='10' fill='rgba(27,29,33,1)' stroke="none"/>
+<text x='16' y='26.15' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='17' fill='rgba(232,234,237,1)'>Adaptive Motion — seat IMU</text>
+<rect x='300' y='12' width='26.32' height='20' rx='10' fill='rgba(63,185,80,1)' stroke="none"/>
+<text x='307' y='24.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(27,29,33,1)'>OK</text>
+<rect x='334.32' y='12' width='87.92' height='20' rx='10' fill='rgba(51,55,62,1)' stroke="none"/>
+<text x='341.32' y='24.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(232,234,237,1)'>MONITOR ONLY</text>
+<rect x='430.24' y='12' width='50.96' height='20' rx='10' fill='rgba(51,55,62,1)' stroke="none"/>
+<text x='437.24' y='24.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(232,234,237,1)'>250 Hz</text>
+<rect x='12' y='44' width='276' height='300' rx='8' fill='rgba(36,39,45,1)' stroke="none"/>
+<rect x='300' y='44' width='276' height='300' rx='8' fill='rgba(36,39,45,1)' stroke="none"/>
+<rect x='588' y='44' width='300' height='300' rx='8' fill='rgba(36,39,45,1)' stroke="none"/>
+<rect x='12' y='356' width='876' height='172' rx='8' fill='rgba(36,39,45,1)' stroke="none"/>
+<clipPath id='c1'><ellipse cx='150' cy='180' rx='112' ry='112'/></clipPath><g clip-path='url(#c1)'>
+<g transform='rotate(3.713,150,180)'>
+<g transform='translate(0,20.274)'>
+<rect x='-186' y='-156' width='672' height='336' rx='0' fill='rgba(46,108,168,1)' stroke="none"/>
+<rect x='-186' y='180' width='672' height='336' rx='0' fill='rgba(119,81,46,1)' stroke="none"/>
+<line x1='-186' y1='180' x2='486' y2='180' stroke="rgba(232,234,237,1)" stroke-width="2"/>
+<line x1='122' y1='292' x2='178' y2='292' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='182' y='294.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(232,234,237,1)'>20</text>
+<line x1='136' y1='264' x2='164' y2='264' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='122' y1='236' x2='178' y2='236' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='182' y='238.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(232,234,237,1)'>10</text>
+<line x1='136' y1='208' x2='164' y2='208' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='136' y1='152' x2='164' y2='152' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='122' y1='124' x2='178' y2='124' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='182' y='126.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(232,234,237,1)'>10</text>
+<line x1='136' y1='96' x2='164' y2='96' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='122' y1='68' x2='178' y2='68' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='182' y='70.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(232,234,237,1)'>20</text>
+<line x1='102' y1='135.2' x2='198' y2='135.2' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='90' y1='101.6' x2='210' y2='101.6' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='102' y1='224.8' x2='198' y2='224.8' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='90' y1='258.4' x2='210' y2='258.4' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+</g>
+</g>
+</g>
+<ellipse cx='150' cy='180' rx='115' ry='115' fill='none' stroke="rgba(51,55,62,1)" stroke-width="6"/>
+<line x1='206' y1='83.01' x2='201.5' y2='90.8' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='188.31' y1='74.75' x2='185.23' y2='83.21' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='169.45' y1='69.7' x2='167.89' y2='78.56' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='150' y1='68' x2='150' y2='77' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='130.55' y1='69.7' x2='132.11' y2='78.56' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='111.69' y1='74.75' x2='114.77' y2='83.21' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='94' y1='83.01' x2='98.5' y2='90.8' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<line x1='134.41' y1='69.09' x2='136.08' y2='80.97' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='165.59' y1='69.09' x2='163.92' y2='80.97' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='122.9' y1='71.33' x2='126.29' y2='84.91' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='177.1' y1='71.33' x2='173.71' y2='84.91' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<g transform='rotate(3.713,150,180)'>
+<path d='M150 70 L143 80 L157 80 Z' fill='rgba(242,177,52,1)' stroke="none"/>
+</g>
+<line x1='104' y1='180' x2='136' y2='180' stroke="rgba(242,177,52,1)" stroke-width="3"/>
+<line x1='164' y1='180' x2='196' y2='180' stroke="rgba(242,177,52,1)" stroke-width="3"/>
+<ellipse cx='150' cy='180' rx='3.5' ry='3.5' fill='rgba(242,177,52,1)' stroke="none"/>
+<text x='48.08' y='320.35' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='13' fill='rgba(232,234,237,1)'>Pitch   3.62°   Roll  -3.71°</text>
+<text x='24' y='63.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(154,160,166,1)'>Attitude</text>
+<ellipse cx='438' cy='180' rx='28' ry='28' fill='none' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<ellipse cx='438' cy='180' rx='56' ry='56' fill='none' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<text x='480.59' y='230.09' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>0.5 g</text>
+<ellipse cx='438' cy='180' rx='84' ry='84' fill='none' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<ellipse cx='438' cy='180' rx='112' ry='112' fill='none' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<text x='520.18' y='269.68' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>1.0 g</text>
+<line x1='326' y1='180' x2='550' y2='180' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<line x1='438' y1='68' x2='438' y2='292' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<ellipse cx='438' cy='180' rx='89.6' ry='89.6' fill='none' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='443' y='79.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>accel</text>
+<text x='443' y='286.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>brake</text>
+<text x='314' y='182.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>L</text>
+<text x='554' y='182.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>R</text>
+<line x1='493.93' y1='226.55' x2='493.87' y2='227.74' stroke="rgba(242,177,52,0.165)" stroke-width="2"/>
+<line x1='493.87' y1='227.74' x2='493.79' y2='228.89' stroke="rgba(242,177,52,0.176)" stroke-width="2"/>
+<line x1='493.79' y1='228.89' x2='493.69' y2='229.99' stroke="rgba(242,177,52,0.188)" stroke-width="2"/>
+<line x1='493.69' y1='229.99' x2='493.57' y2='231.05' stroke="rgba(242,177,52,0.2)" stroke-width="2"/>
+<line x1='493.57' y1='231.05' x2='493.43' y2='232.06' stroke="rgba(242,177,52,0.212)" stroke-width="2"/>
+<line x1='493.43' y1='232.06' x2='493.28' y2='233.02' stroke="rgba(242,177,52,0.224)" stroke-width="2"/>
+<line x1='493.28' y1='233.02' x2='493.1' y2='233.94' stroke="rgba(242,177,52,0.235)" stroke-width="2"/>
+<line x1='493.1' y1='233.94' x2='492.91' y2='234.81' stroke="rgba(242,177,52,0.247)" stroke-width="2"/>
+<line x1='492.91' y1='234.81' x2='492.7' y2='235.63' stroke="rgba(242,177,52,0.259)" stroke-width="2"/>
+<line x1='492.7' y1='235.63' x2='492.47' y2='236.4' stroke="rgba(242,177,52,0.271)" stroke-width="2"/>
+<line x1='492.47' y1='236.4' x2='492.22' y2='237.11' stroke="rgba(242,177,52,0.278)" stroke-width="2"/>
+<line x1='492.22' y1='237.11' x2='491.96' y2='237.78' stroke="rgba(242,177,52,0.29)" stroke-width="2"/>
+<line x1='491.96' y1='237.78' x2='491.67' y2='238.4' stroke="rgba(242,177,52,0.302)" stroke-width="2"/>
+<line x1='491.67' y1='238.4' x2='491.37' y2='238.96' stroke="rgba(242,177,52,0.314)" stroke-width="2"/>
+<line x1='491.37' y1='238.96' x2='491.05' y2='239.47' stroke="rgba(242,177,52,0.325)" stroke-width="2"/>
+<line x1='491.05' y1='239.47' x2='490.71' y2='239.92' stroke="rgba(242,177,52,0.337)" stroke-width="2"/>
+<line x1='490.71' y1='239.92' x2='490.36' y2='240.32' stroke="rgba(242,177,52,0.349)" stroke-width="2"/>
+<line x1='490.36' y1='240.32' x2='489.99' y2='240.67' stroke="rgba(242,177,52,0.361)" stroke-width="2"/>
+<line x1='489.99' y1='240.67' x2='489.6' y2='240.96' stroke="rgba(242,177,52,0.373)" stroke-width="2"/>
+<line x1='489.6' y1='240.96' x2='489.19' y2='241.2' stroke="rgba(242,177,52,0.384)" stroke-width="2"/>
+<line x1='489.19' y1='241.2' x2='488.76' y2='241.38' stroke="rgba(242,177,52,0.392)" stroke-width="2"/>
+<line x1='488.76' y1='241.38' x2='488.32' y2='241.51' stroke="rgba(242,177,52,0.404)" stroke-width="2"/>
+<line x1='488.32' y1='241.51' x2='487.86' y2='241.58' stroke="rgba(242,177,52,0.416)" stroke-width="2"/>
+<line x1='487.86' y1='241.58' x2='487.39' y2='241.6' stroke="rgba(242,177,52,0.427)" stroke-width="2"/>
+<line x1='487.39' y1='241.6' x2='486.89' y2='241.56' stroke="rgba(242,177,52,0.439)" stroke-width="2"/>
+<line x1='486.89' y1='241.56' x2='486.38' y2='241.47' stroke="rgba(242,177,52,0.451)" stroke-width="2"/>
+<line x1='486.38' y1='241.47' x2='485.86' y2='241.32' stroke="rgba(242,177,52,0.463)" stroke-width="2"/>
+<line x1='485.86' y1='241.32' x2='485.32' y2='241.11' stroke="rgba(242,177,52,0.475)" stroke-width="2"/>
+<line x1='485.32' y1='241.11' x2='484.76' y2='240.85' stroke="rgba(242,177,52,0.486)" stroke-width="2"/>
+<line x1='484.76' y1='240.85' x2='484.19' y2='240.54' stroke="rgba(242,177,52,0.498)" stroke-width="2"/>
+<line x1='484.19' y1='240.54' x2='483.6' y2='240.17' stroke="rgba(242,177,52,0.51)" stroke-width="2"/>
+<line x1='483.6' y1='240.17' x2='483' y2='239.75' stroke="rgba(242,177,52,0.518)" stroke-width="2"/>
+<line x1='483' y1='239.75' x2='482.38' y2='239.27' stroke="rgba(242,177,52,0.529)" stroke-width="2"/>
+<line x1='482.38' y1='239.27' x2='481.74' y2='238.74' stroke="rgba(242,177,52,0.541)" stroke-width="2"/>
+<line x1='481.74' y1='238.74' x2='481.1' y2='238.16' stroke="rgba(242,177,52,0.553)" stroke-width="2"/>
+<line x1='481.1' y1='238.16' x2='480.43' y2='237.52' stroke="rgba(242,177,52,0.565)" stroke-width="2"/>
+<line x1='480.43' y1='237.52' x2='479.76' y2='236.83' stroke="rgba(242,177,52,0.576)" stroke-width="2"/>
+<line x1='479.76' y1='236.83' x2='479.07' y2='236.09' stroke="rgba(242,177,52,0.588)" stroke-width="2"/>
+<line x1='479.07' y1='236.09' x2='478.36' y2='235.31' stroke="rgba(242,177,52,0.6)" stroke-width="2"/>
+<line x1='478.36' y1='235.31' x2='477.64' y2='234.47' stroke="rgba(242,177,52,0.612)" stroke-width="2"/>
+<line x1='477.64' y1='234.47' x2='476.91' y2='233.58' stroke="rgba(242,177,52,0.624)" stroke-width="2"/>
+<line x1='476.91' y1='233.58' x2='476.17' y2='232.64' stroke="rgba(242,177,52,0.631)" stroke-width="2"/>
+<line x1='476.17' y1='232.64' x2='475.41' y2='231.66' stroke="rgba(242,177,52,0.643)" stroke-width="2"/>
+<line x1='475.41' y1='231.66' x2='474.64' y2='230.63' stroke="rgba(242,177,52,0.655)" stroke-width="2"/>
+<line x1='474.64' y1='230.63' x2='473.86' y2='229.56' stroke="rgba(242,177,52,0.667)" stroke-width="2"/>
+<line x1='473.86' y1='229.56' x2='473.06' y2='228.44' stroke="rgba(242,177,52,0.678)" stroke-width="2"/>
+<line x1='473.06' y1='228.44' x2='472.25' y2='227.27' stroke="rgba(242,177,52,0.69)" stroke-width="2"/>
+<line x1='472.25' y1='227.27' x2='471.44' y2='226.07' stroke="rgba(242,177,52,0.702)" stroke-width="2"/>
+<line x1='471.44' y1='226.07' x2='470.61' y2='224.82' stroke="rgba(242,177,52,0.714)" stroke-width="2"/>
+<line x1='470.61' y1='224.82' x2='469.77' y2='223.53' stroke="rgba(242,177,52,0.725)" stroke-width="2"/>
+<line x1='469.77' y1='223.53' x2='468.92' y2='222.2' stroke="rgba(242,177,52,0.737)" stroke-width="2"/>
+<line x1='468.92' y1='222.2' x2='468.06' y2='220.84' stroke="rgba(242,177,52,0.745)" stroke-width="2"/>
+<line x1='468.06' y1='220.84' x2='467.18' y2='219.44' stroke="rgba(242,177,52,0.757)" stroke-width="2"/>
+<line x1='467.18' y1='219.44' x2='466.3' y2='218' stroke="rgba(242,177,52,0.769)" stroke-width="2"/>
+<line x1='466.3' y1='218' x2='465.41' y2='216.53' stroke="rgba(242,177,52,0.78)" stroke-width="2"/>
+<line x1='465.41' y1='216.53' x2='464.51' y2='215.02' stroke="rgba(242,177,52,0.792)" stroke-width="2"/>
+<line x1='464.51' y1='215.02' x2='463.6' y2='213.49' stroke="rgba(242,177,52,0.804)" stroke-width="2"/>
+<line x1='463.6' y1='213.49' x2='462.69' y2='211.92' stroke="rgba(242,177,52,0.816)" stroke-width="2"/>
+<line x1='462.69' y1='211.92' x2='461.76' y2='210.33' stroke="rgba(242,177,52,0.827)" stroke-width="2"/>
+<line x1='461.76' y1='210.33' x2='460.83' y2='208.71' stroke="rgba(242,177,52,0.839)" stroke-width="2"/>
+<line x1='460.83' y1='208.71' x2='459.89' y2='207.06' stroke="rgba(242,177,52,0.851)" stroke-width="2"/>
+<ellipse cx='459.89' cy='207.06' rx='7' ry='7' fill='rgba(242,177,52,1)' stroke="rgba(27,29,33,1)" stroke-width="2"/>
+<text x='313.68' y='319.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>Cue 0.31 g  (surge -0.24  sway -0.20)</text>
+<text x='312' y='63.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(154,160,166,1)'>Horizontal cue felt in the seat</text>
+<text x='600' y='63.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(154,160,166,1)'>Rates, heave, vibration, impacts</text>
+<text x='600' y='87.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Pitch rate</text>
+<rect x='600' y='92' width='160' height='12' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='657.64' y='92' width='22.36' height='12' rx='0' fill='rgba(79,163,247,1)' stroke="none"/>
+<line x1='733.33' y1='89' x2='733.33' y2='107' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='626.67' y1='89' x2='626.67' y2='107' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='680' y1='90' x2='680' y2='106' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='768' y='101.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>-25.15 °/s</text>
+<text x='600' y='121.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Roll rate</text>
+<rect x='600' y='126' width='160' height='12' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='680' y='126' width='19.17' height='12' rx='0' fill='rgba(245,138,60,1)' stroke="none"/>
+<line x1='733.33' y1='123' x2='733.33' y2='141' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='626.67' y1='123' x2='626.67' y2='141' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='680' y1='124' x2='680' y2='140' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='768' y='135.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>+21.56 °/s</text>
+<text x='600' y='155.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Heave cue</text>
+<rect x='600' y='160' width='160' height='12' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='664.02' y='160' width='15.98' height='12' rx='0' fill='rgba(232,234,237,1)' stroke="none"/>
+<line x1='733.33' y1='157' x2='733.33' y2='175' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='626.67' y1='157' x2='626.67' y2='175' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='680' y1='158' x2='680' y2='174' stroke="rgba(255,255,255,0.753)" stroke-width="1.2"/>
+<text x='768' y='169.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>-0.18 g</text>
+<text x='600' y='189.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Vibration RMS</text>
+<rect x='600' y='194' width='160' height='12' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='600' y='194' width='28.71' height='12' rx='0' fill='rgba(63,185,80,1)' stroke="none"/>
+<line x1='706.67' y1='191' x2='706.67' y2='209' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='768' y='203.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>0.09 g</text>
+<text x='600' y='223.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Peak |a|-1g   impacts 0</text>
+<rect x='600' y='228' width='160' height='12' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='600' y='228' width='62.81' height='12' rx='0' fill='rgba(63,185,80,1)' stroke="none"/>
+<line x1='706.67' y1='225' x2='706.67' y2='243' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='768' y='237.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>0.88 g</text>
+<text x='600' y='258.45' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='11' fill='rgba(154,160,166,1)'>Gains</text>
+<rect x='600' y='266' width='34' height='58' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='600' y='276.89' width='34' height='47.11' rx='0' fill='rgba(227,179,65,1)' stroke="none"/>
+<line x1='597' y1='306.6' x2='637' y2='306.6' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='603.56' y='297.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(27,29,33,1)'>0.81</text>
+<text x='605.8' y='335.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>Glob</text>
+<rect x='670' y='266' width='34' height='58' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='670' y='266.08' width='34' height='57.92' rx='0' fill='rgba(63,185,80,1)' stroke="none"/>
+<line x1='667' y1='306.6' x2='707' y2='306.6' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='673.56' y='297.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(27,29,33,1)'>1.00</text>
+<text x='673' y='335.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>Pitch</text>
+<rect x='740' y='266' width='34' height='58' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='740' y='302.43' width='34' height='21.57' rx='0' fill='rgba(227,179,65,1)' stroke="none"/>
+<line x1='737' y1='306.6' x2='777' y2='306.6' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='743.56' y='297.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(232,234,237,1)'>0.37</text>
+<text x='745.8' y='335.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>Roll</text>
+<rect x='810' y='266' width='34' height='58' rx='3' fill='rgba(51,55,62,1)' stroke="none"/>
+<rect x='810' y='266' width='34' height='58' rx='0' fill='rgba(63,185,80,1)' stroke="none"/>
+<line x1='807' y1='306.6' x2='847' y2='306.6' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='813.56' y='297.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(27,29,33,1)'>1.00</text>
+<text x='813' y='335.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>Heave</text>
+<text x='24' y='373.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(154,160,166,1)'>Last 10 s</text>
+<text x='110' y='373.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(79,163,247,1)'>pitch</text>
+<text x='152' y='373.4' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='12' fill='rgba(245,138,60,1)'>roll</text>
+<line x1='56' y1='448' x2='872' y2='448' stroke="rgba(58,63,71,1)" stroke-width="1"/>
+<line x1='56' y1='422.4' x2='872' y2='422.4' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='56' y1='403.2' x2='872' y2='403.2' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='16' y='386.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>+20°</text>
+<line x1='56' y1='473.6' x2='872' y2='473.6' stroke="rgba(227,179,65,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<line x1='56' y1='492.8' x2='872' y2='492.8' stroke="rgba(229,72,77,1)" stroke-width="1.2" stroke-dasharray="4.8,3.6"/>
+<text x='16' y='514.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>-20°</text>
+<text x='16' y='450.5' font-family='Segoe UI, DejaVu Sans, sans-serif' font-size='10' fill='rgba(154,160,166,1)'>0°</text>
+<path d='M58.72 448 L61.44 447.84 L64.16 447.68 L66.88 447.51 L69.6 447.34 L72.32 447.17 L75.04 446.98 L77.76 446.79 L80.48 446.58 L83.2 446.36 L85.92 446.13 L88.64 445.88 L91.36 445.62 L94.08 445.34 L96.8 445.04 L99.52 444.73 L102.24 444.39 L104.96 444.04 L107.68 443.66 L110.4 443.27 L113.12 442.86 L115.84 442.43 L118.56 441.98 L121.28 441.51 L124 441.02 L126.72 440.52 L129.44 440 L132.16 439.47 L134.88 438.92 L137.6 438.36 L140.32 437.79 L143.04 437.22 L145.76 436.63 L148.48 436.04 L151.2 435.45 L153.92 434.86 L156.64 434.27 L159.36 433.68 L162.08 433.09 L164.8 432.52 L167.52 431.96 L170.24 431.4 L172.96 430.87 L175.68 430.35 L178.4 429.85 L181.12 429.37 L183.84 428.92 L186.56 428.49 L189.28 428.09 L192 427.72 L194.72 427.38 L197.44 427.08 L200.16 426.81 L202.88 426.58 L205.6 426.39 L208.32 426.23 L211.04 426.12 L213.76 426.05 L216.48 426.02 L219.2 426.03 L221.92 426.09 L224.64 426.19 L227.36 426.33 L230.08 426.52 L232.8 426.75 L235.52 427.03 L238.24 427.34 L240.96 427.7 L243.68 428.09 L246.4 428.53 L249.12 429 L251.84 429.51 L254.56 430.05 L257.28 430.63 L260 431.23 L262.72 431.87 L265.44 432.53 L268.16 433.21 L270.88 433.92 L273.6 434.65 L276.32 435.4 L279.04 436.16 L281.76 436.93 L284.48 437.71 L287.2 438.5 L289.92 439.3 L292.64 440.09 L295.36 440.89 L298.08 441.68 L300.8 442.47 L303.52 443.25 L306.24 444.03 L308.96 444.79 L311.68 445.53 L314.4 446.27 L317.12 446.98 L319.84 447.67 L322.56 448.35 L325.28 449 L328 449.63 L330.72 450.23 L333.44 450.81 L336.16 451.36 L338.88 451.89 L341.6 452.39 L344.32 452.86 L347.04 453.3 L349.76 453.71 L352.48 454.1 L355.2 454.46 L357.92 454.79 L360.64 455.1 L363.36 455.38 L366.08 455.64 L368.8 455.87 L371.52 456.08 L374.24 456.28 L376.96 456.45 L379.68 456.6 L382.4 456.74 L385.12 456.86 L387.84 456.97 L390.56 457.06 L393.28 457.15 L396 457.23 L398.72 457.3 L401.44 457.37 L404.16 457.43 L406.88 457.5 L409.6 457.56 L412.32 457.63 L415.04 457.7 L417.76 457.77 L420.48 457.86 L423.2 457.95 L425.92 458.04 L428.64 458.15 L431.36 458.27 L434.08 458.4 L436.8 458.55 L439.52 458.7 L442.24 458.87 L444.96 459.06 L447.68 459.26 L450.4 459.47 L453.12 459.69 L455.84 459.93 L458.56 460.18 L461.28 460.44 L464 460.72 L466.72 461 L469.44 461.3 L472.16 461.6 L474.88 461.91 L477.6 462.22 L480.32 462.54 L483.04 462.86 L485.76 463.17 L488.48 463.49 L491.2 463.81 L493.92 464.12 L496.64 464.42 L499.36 464.71 L502.08 464.99 L504.8 465.26 L507.52 465.51 L510.24 465.74 L512.96 465.95 L515.68 466.14 L518.4 466.31 L521.12 466.46 L523.84 466.57 L526.56 466.66 L529.28 466.71 L532 466.73 L534.72 466.72 L537.44 466.68 L540.16 466.6 L542.88 466.48 L545.6 466.32 L548.32 466.13 L551.04 465.9 L553.76 465.63 L556.48 465.31 L559.2 464.96 L561.92 464.57 L564.64 464.14 L567.36 463.68 L570.08 463.17 L572.8 462.63 L575.52 462.06 L578.24 461.45 L580.96 460.8 L583.68 460.13 L586.4 459.42 L589.12 458.69 L591.84 457.93 L594.56 457.15 L597.28 456.34 L600 455.52 L602.72 454.67 L605.44 453.82 L608.16 452.95 L610.88 452.07 L613.6 451.19 L616.32 450.3 L619.04 449.4 L621.76 448.51 L624.48 447.62 L627.2 446.74 L629.92 445.87 L632.64 445.01 L635.36 444.16 L638.08 443.33 L640.8 442.51 L643.52 441.72 L646.24 440.95 L648.96 440.2 L651.68 439.48 L654.4 438.78 L657.12 438.12 L659.84 437.49 L662.56 436.88 L665.28 436.32 L668 435.78 L670.72 435.28 L673.44 434.82 L676.16 434.39 L678.88 434 L681.6 433.64 L684.32 433.32 L687.04 433.03 L689.76 432.78 L692.48 432.57 L695.2 432.39 L697.92 432.24 L700.64 432.12 L703.36 432.03 L706.08 431.98 L708.8 431.95 L711.52 431.95 L714.24 431.97 L716.96 432.01 L719.68 432.08 L722.4 432.17 L725.12 432.27 L727.84 432.39 L730.56 432.52 L733.28 432.67 L736 432.82 L738.72 432.99 L741.44 433.16 L744.16 433.33 L746.88 433.51 L749.6 433.68 L752.32 433.86 L755.04 434.03 L757.76 434.2 L760.48 434.36 L763.2 434.52 L765.92 434.67 L768.64 434.81 L771.36 434.94 L774.08 435.05 L776.8 435.16 L779.52 435.26 L782.24 435.34 L784.96 435.41 L787.68 435.47 L790.4 435.51 L793.12 435.54 L795.84 435.56 L798.56 435.57 L801.28 435.57 L804 435.56 L806.72 435.55 L809.44 435.52 L812.16 435.49 L814.88 435.45 L817.6 435.41 L820.32 435.36 L823.04 435.32 L825.76 435.28 L828.48 435.23 L831.2 435.2 L833.92 435.17 L836.64 435.15 L839.36 435.14 L842.08 435.14 L844.8 435.15 L847.52 435.18 L850.24 435.23 L852.96 435.29 L855.68 435.38 L858.4 435.49 L861.12 435.62 L863.84 435.78 L866.56 435.96 L869.28 436.17 L872 436.41 ' fill='none' stroke="rgba(79,163,247,1)" stroke-width="1.8"/>
+<path d='M58.72 436.16 L61.44 435.65 L64.16 435.14 L66.88 434.64 L69.6 434.14 L72.32 433.65 L75.04 433.16 L77.76 432.68 L80.48 432.2 L83.2 431.72 L85.92 431.26 L88.64 430.79 L91.36 430.34 L94.08 429.89 L96.8 429.44 L99.52 429 L102.24 428.57 L104.96 428.15 L107.68 427.73 L110.4 427.32 L113.12 426.91 L115.84 426.51 L118.56 426.12 L121.28 425.74 L124 425.36 L126.72 424.99 L129.44 424.63 L132.16 424.28 L134.88 423.94 L137.6 423.6 L140.32 423.27 L143.04 422.95 L145.76 422.64 L148.48 422.34 L151.2 422.04 L153.92 421.76 L156.64 421.48 L159.36 421.21 L162.08 420.95 L164.8 420.7 L167.52 420.46 L170.24 420.23 L172.96 420.01 L175.68 419.8 L178.4 419.59 L181.12 419.4 L183.84 419.22 L186.56 419.04 L189.28 418.88 L192 418.72 L194.72 418.58 L197.44 418.44 L200.16 418.32 L202.88 418.2 L205.6 418.1 L208.32 418 L211.04 417.92 L213.76 417.84 L216.48 417.78 L219.2 417.72 L221.92 417.68 L224.64 417.64 L227.36 417.62 L230.08 417.6 L232.8 417.6 L235.52 417.61 L238.24 417.62 L240.96 417.65 L243.68 417.69 L246.4 417.73 L249.12 417.79 L251.84 417.86 L254.56 417.94 L257.28 418.03 L260 418.12 L262.72 418.23 L265.44 418.35 L268.16 418.48 L270.88 418.62 L273.6 418.76 L276.32 418.92 L279.04 419.09 L281.76 419.27 L284.48 419.45 L287.2 419.65 L289.92 419.85 L292.64 420.07 L295.36 420.29 L298.08 420.53 L300.8 420.77 L303.52 421.02 L306.24 421.29 L308.96 421.56 L311.68 421.84 L314.4 422.12 L317.12 422.42 L319.84 422.73 L322.56 423.04 L325.28 423.36 L328 423.69 L330.72 424.03 L333.44 424.38 L336.16 424.73 L338.88 425.1 L341.6 425.47 L344.32 425.84 L347.04 426.23 L349.76 426.62 L352.48 427.02 L355.2 427.43 L357.92 427.84 L360.64 428.26 L363.36 428.69 L366.08 429.12 L368.8 429.56 L371.52 430.01 L374.24 430.46 L376.96 430.92 L379.68 431.38 L382.4 431.85 L385.12 432.33 L387.84 432.81 L390.56 433.29 L393.28 433.78 L396 434.28 L398.72 434.78 L401.44 435.28 L404.16 435.79 L406.88 436.3 L409.6 436.82 L412.32 437.34 L415.04 437.86 L417.76 438.39 L420.48 438.92 L423.2 439.45 L425.92 439.99 L428.64 440.53 L431.36 441.07 L434.08 441.62 L436.8 442.16 L439.52 442.71 L442.24 443.26 L444.96 443.81 L447.68 444.36 L450.4 444.92 L453.12 445.47 L455.84 446.03 L458.56 446.58 L461.28 447.14 L464 447.7 L466.72 448.26 L469.44 448.81 L472.16 449.37 L474.88 449.93 L477.6 450.48 L480.32 451.04 L483.04 451.59 L485.76 452.14 L488.48 452.7 L491.2 453.25 L493.92 453.79 L496.64 454.34 L499.36 454.88 L502.08 455.43 L504.8 455.96 L507.52 456.5 L510.24 457.03 L512.96 457.56 L515.68 458.09 L518.4 458.62 L521.12 459.14 L523.84 459.65 L526.56 460.17 L529.28 460.67 L532 461.18 L534.72 461.68 L537.44 462.17 L540.16 462.67 L542.88 463.15 L545.6 463.63 L548.32 464.11 L551.04 464.58 L553.76 465.04 L556.48 465.5 L559.2 465.95 L561.92 466.4 L564.64 466.84 L567.36 467.27 L570.08 467.7 L572.8 468.12 L575.52 468.54 L578.24 468.94 L580.96 469.35 L583.68 469.74 L586.4 470.12 L589.12 470.5 L591.84 470.87 L594.56 471.24 L597.28 471.59 L600 471.94 L602.72 472.28 L605.44 472.61 L608.16 472.93 L610.88 473.25 L613.6 473.55 L616.32 473.85 L619.04 474.14 L621.76 474.42 L624.48 474.69 L627.2 474.95 L629.92 475.21 L632.64 475.45 L635.36 475.69 L638.08 475.91 L640.8 476.13 L643.52 476.33 L646.24 476.53 L648.96 476.72 L651.68 476.9 L654.4 477.07 L657.12 477.22 L659.84 477.37 L662.56 477.51 L665.28 477.64 L668 477.76 L670.72 477.87 L673.44 477.97 L676.16 478.06 L678.88 478.13 L681.6 478.2 L684.32 478.26 L687.04 478.31 L689.76 478.35 L692.48 478.37 L695.2 478.39 L697.92 478.4 L700.64 478.4 L703.36 478.38 L706.08 478.36 L708.8 478.33 L711.52 478.28 L714.24 478.23 L716.96 478.17 L719.68 478.09 L722.4 478.01 L725.12 477.91 L727.84 477.81 L730.56 477.69 L733.28 477.57 L736 477.44 L738.72 477.29 L741.44 477.14 L744.16 476.97 L746.88 476.8 L749.6 476.62 L752.32 476.42 L755.04 476.22 L757.76 476.01 L760.48 475.79 L763.2 475.56 L765.92 475.32 L768.64 475.07 L771.36 474.81 L774.08 474.54 L776.8 474.27 L779.52 473.98 L782.24 473.69 L784.96 473.38 L787.68 473.07 L790.4 472.75 L793.12 472.43 L795.84 472.09 L798.56 471.75 L801.28 471.4 L804 471.04 L806.72 470.67 L809.44 470.29 L812.16 469.91 L814.88 469.52 L817.6 469.12 L820.32 468.72 L823.04 468.31 L825.76 467.89 L828.48 467.46 L831.2 467.03 L833.92 466.6 L836.64 466.15 L839.36 465.7 L842.08 465.24 L844.8 464.78 L847.52 464.32 L850.24 463.84 L852.96 463.36 L855.68 462.88 L858.4 462.39 L861.12 461.9 L863.84 461.4 L866.56 460.9 L869.28 460.39 L872 459.88 ' fill='none' stroke="rgba(245,138,60,1)" stroke-width="1.8"/>
+</g>
+</g>
+</svg>

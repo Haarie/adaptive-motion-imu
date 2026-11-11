@@ -47,6 +47,8 @@ namespace SimSpares.AdaptiveMotion
 
         public PlatformState State { get { lock (_stateLock) return _state; } }
         public double FrameRate => _frameRate;
+        /// <summary>True while IMU frames keep arriving (last one less than 0.5 s ago).</summary>
+        public bool SensorFresh { get { lock (_stateLock) return !double.IsNaN(_lastFrameSec) && ImuSerialLink.NowSec - _lastFrameSec < 0.5; } }
         public string DeviceInfo => _deviceInfo;
         public string LastMessage => _lastMessage;
 

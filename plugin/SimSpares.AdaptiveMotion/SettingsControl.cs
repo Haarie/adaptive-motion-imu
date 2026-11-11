@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using SimSpares.AdaptiveMotion.Core;
+using SimSpares.AdaptiveMotion.UI;
 
 namespace SimSpares.AdaptiveMotion
 {
@@ -102,7 +103,21 @@ namespace SimSpares.AdaptiveMotion
                 Btn("Reset trip", () => _p.Controller.ResetTrip()),
                 Btn("Reset gains", () => _p.Controller.ResetGains())));
 
-            Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            // Tab 1: live visualizer (+ pop-out); Tab 2: the settings page above
+            var liveGrid = new DockPanel { Margin = new Thickness(8) };
+            var liveBar = Buttons(
+                Btn("Pop out window", () => VisualizerWindow.ShowFor(_p)),
+                Btn("Capture level (rig at centre)", () => _p.StartLevelCapture()),
+                Btn("Reset trip", () => _p.Controller.ResetTrip()),
+                Btn("Toggle adaptive", () => { s.AdaptiveEnabled = !s.AdaptiveEnabled; _p.Note("Adaptive " + (s.AdaptiveEnabled ? "ON" : "OFF")); }));
+            DockPanel.SetDock(liveBar, Dock.Top);
+            liveGrid.Children.Add(liveBar);
+            liveGrid.Children.Add(new MotionVisualizer(_p));
+
+            var tabs = new TabControl();
+            tabs.Items.Add(new TabItem { Header = "Live view", Content = liveGrid });
+            tabs.Items.Add(new TabItem { Header = "Settings", Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            Content = tabs;
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
             _timer.Tick += (o, e) => Refresh();

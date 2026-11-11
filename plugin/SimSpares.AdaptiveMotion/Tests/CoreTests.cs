@@ -23,6 +23,7 @@ static class CoreTests
         PacketTests();
         LagTests();
         ParkTests();
+        VisualTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -352,5 +353,30 @@ static class CoreTests
             for (int i = 0; i < 50; i++) { t2 += 0.004; pm2.Update(new PlatformState { TimeSec = t2 }, false); }
         }
         Check(c2 == 0, "short still periods (red lights, pauses < 3 s) don't count as park");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    static void VisualTests()
+    {
+        var tb = new TrendBuffer(5);
+        for (int i = 0; i < 8; i++) tb.Add(i, i * 10, -i);
+        tb.Get(0, out double t0, out double a0, out double b0);
+        tb.Get(4, out double t4, out _, out _);
+        Check(tb.Count == 5 && t0 == 3 && a0 == 30 && b0 == -3 && t4 == 7, "trend buffer keeps the newest samples, oldest first");
+
+        Check(VisualMath.Frac(5, 0, 10) == 0.5 && VisualMath.Frac(-1, 0, 10) == 0 && VisualMath.Frac(20, 0, 10) == 1 && VisualMath.Frac(double.NaN, 0, 1) == 0, "Frac clamps");
+
+        VisualMath.GgPoint(0.5, 0, 1.0, 100, out double x, out double y, out bool clip);
+        Check(Near(x, 0, 1e-9) && Near(y, -50, 1e-9) && !clip, "forward cue drawn up");
+        VisualMath.GgPoint(0, 0.5, 1.0, 100, out x, out y, out clip);
+        Check(Near(x, -50, 1e-9), "+sway (left) drawn left");
+        VisualMath.GgPoint(3, 4, 1.0, 100, out x, out y, out clip);
+        Check(clip && Near(Math.Sqrt(x * x + y * y), 100, 1e-9), "g-g point clamped to the rim");
+
+        VisualMath.Horizon(5, 3, 4, 100, out double rot, out double sh);
+        Check(Near(rot, -5, 1e-9) && Near(sh, 12, 1e-9), "horizon: +roll counter-clockwise, nose-up moves it down");
+        VisualMath.Horizon(0, 90, 4, 100, out rot, out sh);
+        Check(Near(sh, 90, 1e-9), "horizon shift clamped inside the instrument");
+        Check(VisualMath.NiceRange(16.1) == 20 && VisualMath.NiceRange(0.7) == 1, "nice axis range");
     }
 }
