@@ -47,10 +47,12 @@ SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a se
 (The preview image is rendered off-Windows through an SVG stand-in, so fonts differ slightly from SimHub.)
 
 ## Mounting
-Default `mount_style = "across"`: the box sits across a (vertical) 30/40-series slot-8 profile on a mounting
-plate with two M6 slots, 49.4 mm apart along the profile (±3 mm play), both in the same profile slot.
-Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. `mount_style = "along"` gives M6 ears at the
-box ends instead. The box does not have to be square to the rig: use **Auto-align** (below).
+Default `mount_style = "side"`: the box lies along a horizontal 30/40-series slot-8 cross-member, bolted to
+its vertical side face; a 6 mm flange along the box's long side carries two M6 bolts 32 mm apart (±3 mm play),
+both in that face's horizontal slot. The box sits beside the slot (above it, or below it if you flip it).
+Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. Print `base.stl` (side), or
+`base_across.stl` (box across a vertical upright) / `base_along.stl` (ears at the ends) for other mounts.
+The box does not have to be square to the rig: use **Auto-align** (below).
 
 ![mounting](docs/enclosure_mounting.png)
 

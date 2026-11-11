@@ -18,7 +18,7 @@ calls=[ # n, target mm, label px
  (3,(67,13.7),(1110,72)),
  (4,(87.7,13.7),(1400,72)),
  (5,(19.7,-3.0),(420,760)),
- (6,(49.25,-11.0),(1050,760)),
+ (6,(33.25,-11.0),(1050,760)),
  (7,(-3.0,6.3),(200,760)),
  (8,(73,4.0),(1350,760)),
 ]
@@ -36,7 +36,7 @@ legend=[
  "3  GY-521 (MPU-6050): two M2.5 x 6 screws into the bosses, header edge on the support bar",
  "4  BSS138 level shifter: stuck in its bay with VHB tape",
  "5  Lid: 4 x M3 screws into heat-set inserts in the outside lugs",
- "6  Mounting plate: 2 x M6 slots (49.4 mm apart, +-3 mm play) into one slot of the profile",
+ "6  Side flange: 2 x M6 slots, 32 mm apart (+-3 mm play), both in the horizontal slot of the beam",
  "7  Cable-tie slots: USB strain relief on the flat tab",
  "8  Wires (5V, 3V3, GND, SDA, SCL) under 10 cm, twisted pairs, soldered - see the wiring sheet",
 ]

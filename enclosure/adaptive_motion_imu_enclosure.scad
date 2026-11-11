@@ -1,6 +1,6 @@
 // AdaptiveMotionIMU enclosure — Arduino Micro (headerless) + GY-521 (MPU-6050)
-// Rigid two-part box that bolts to aluminium extrusion with two M6 bolts + T-nuts (30/40 series, slot 8),
-// either ACROSS a (vertical) profile — default — or ALONG it, see mount_style.
+// Rigid two-part box that bolts to aluminium extrusion with two M6 bolts + T-nuts (30/40 series, slot 8).
+// Default "side": on the vertical side face of a horizontal cross-member, both bolts in its horizontal slot.
 // Design rule: the sensor must move EXACTLY like the seat. So: thick floor, sensor screwed to
 // bosses that grow out of the floor, two M6 bolts into one slot of the profile, print in PETG/ASA, 100 % infill
 // around the sensor pocket (or simply 6 perimeters + 40 % gyroid everywhere).
@@ -45,12 +45,17 @@ outer_w = inner_w + 2 * wall;
 base_h  = floor_t + inner_h;
 
 // ---------------- mounting ----------------------------------------------------------------
+// "side":   (default) a flange along the box's long side carries both bolts in a row parallel to the box,
+//           so the box lies along a horizontal beam, bolted into the slot of its vertical side face; the
+//           box sits beside (above or below) the slot. Bolt heads stay clear of the lugs and the USB plug.
 // "across": the box lies across the profile (e.g. a vertical upright, box horizontal); a mounting
 //           plate under the middle of the box carries the two bolts above and below the box, both in
 //           the same profile slot, so the box can't twist. Slots are long along the profile.
 // "along":  ears at both ends, bolts along the box's long axis (profile parallel to the box).
 // The box need not be square to the rig: the plugin's Auto-align measures the real mounting angle.
-mount_style = "across";
+mount_style = "side";
+side_pitch = 32;        // bolt spacing along the profile ("side")
+side_flange = 20;       // flange reach below the box side ("side")
 bolt_d = 6.6;           // M6 clearance
 bolt_head_d = 11.0;     // DIN 912 / ISO 7380 M6 head + washer room
 bolt_slot = 6;          // slot length (mm of play along the profile)
@@ -98,6 +103,16 @@ module base() {
                     cube([ear_l + 1, outer_w, ear_t]);
                     cube([1, outer_w, ear_t + 5]);
                 }
+            } else if (mount_style == "side") {
+                // flange along the -Y side of the box, under its middle part
+                translate([outer_l / 2 - side_pitch / 2 - 13, -side_flange, 0]) cube([side_pitch + 26, side_flange + 1, plate_t]);
+                // three gussets tie the flange to the side wall, clear of the bolt heads (head + slot play)
+                for (gx = [outer_l / 2 - side_pitch / 2 - 13, outer_l / 2 - 1.5, outer_l / 2 + side_pitch / 2 + 10])
+                    hull() {
+                        translate([gx, -side_flange + 1, 0]) cube([3, 1, plate_t]);
+                        translate([gx, 0, 0]) cube([3, 1, base_h - 3]);
+                    }
+                translate([-tab_l, 0, 0]) cube([tab_l + 1, outer_w, 4]);     // cable-tie tab at the USB end
             } else {
                 // mounting plate under the middle of the box, reaching past both long sides
                 translate([outer_l / 2 - plate_l / 2, -plate_ext, 0]) cube([plate_l, outer_w + 2 * plate_ext, plate_t]);
@@ -117,6 +132,10 @@ module base() {
             // M6 slots in the ears, long along the box
             for (x = [-ear_l / 2 - 2, outer_l + ear_l / 2]) translate([x, outer_w / 2, -1])
                 hull() for (dx = [-bolt_slot / 2, bolt_slot / 2]) translate([dx, 0, 0]) cylinder(d = bolt_d, h = ear_t + 10);
+        } else if (mount_style == "side") {
+            // M6 slots in the flange, long along the profile (x)
+            for (x = [outer_l / 2 - side_pitch / 2, outer_l / 2 + side_pitch / 2]) translate([x, -side_flange / 2 - 1, -1])
+                hull() for (dx = [-bolt_slot / 2, bolt_slot / 2]) translate([dx, 0, 0]) cylinder(d = bolt_d, h = plate_t + 10);
         } else {
             // M6 slots in the plate, long along the profile (y)
             for (y = [-bolt_off, outer_w + bolt_off]) translate([outer_l / 2, y, -1])
@@ -273,7 +292,24 @@ module profile40(h) {
         translate([0, 20, -h]) cylinder(d = 7, h = 2 * h);
     }
 }
-module profile_scene() {
+module profile_scene() { if (mount_style == "side") side_scene(); else upright_scene(); }
+
+// horizontal 40x40 cross-member, box on its vertical front face, bolts in the horizontal slot
+module side_scene() {
+    rotate([0, 90, 0]) profile40(240);
+    rotate([90, 0, 0]) translate([-outer_l / 2, side_flange / 2 + 1, 0]) {
+        color("SteelBlue") base();
+        color("Gainsboro") translate([0, 0, base_h]) lid();
+        color("Orange") translate([0, 0, base_h]) inlay();
+        for (x = [outer_l / 2 - side_pitch / 2, outer_l / 2 + side_pitch / 2]) translate([x, -side_flange / 2 - 1, 0]) {
+            color("DimGray") translate([0, 0, plate_t]) cylinder(d = 10, h = 6);
+            color("DimGray") translate([0, 0, -9]) cylinder(d = 6, h = plate_t + 9);
+            color("Goldenrod") translate([-8, -5, -7]) cube([16, 10, 4]);
+        }
+    }
+}
+
+module upright_scene() {
     profile40(200);
     // box: its bottom on the profile face (y = 0), long axis horizontal, bolt line along the profile
     rotate([90, 0, 0]) translate([-outer_l / 2, -outer_w / 2, 0]) {
@@ -292,5 +328,6 @@ module profile_scene() {
 module print_flip() translate([0, outer_w, lid_t]) rotate([180, 0, 0]) children();
 
 echo(str("Outer box: ", outer_l, " x ", outer_w, " x ", base_h + lid_t, " mm; mount ", mount_style, ": ",
-         mount_style == "across" ? str("M6 bolt pitch ", outer_w + 2 * bolt_off, " mm along the profile, plate ", plate_l, " x ", outer_w + 2 * plate_ext, " mm")
-                                 : str("M6 slot centre distance ", outer_l + ear_l + 2, " mm along the box")));
+         mount_style == "side" ? str("M6 bolt pitch ", side_pitch, " mm along the profile, bolt line ", side_flange / 2 + 1, " mm below the box side")
+       : mount_style == "across" ? str("M6 bolt pitch ", outer_w + 2 * bolt_off, " mm along the profile")
+       : str("M6 slot centre distance ", outer_l + ear_l + 2, " mm along the box")));
