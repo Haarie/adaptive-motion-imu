@@ -24,6 +24,7 @@ enclosure/
   adaptive_motion_imu_enclosure.scad        parametric source
   base.stl, lid.stl, lid_inlay.stl            print-ready (lid + inlay share coordinates for the MMU3)
   preview.png, preview_base.png
+  fit_figure.py                             annotated fit picture -> docs/enclosure_fit.png (parts "fit" / "exploded")
 ```
 
 ## Build the plugin (RYZEN-Racing)

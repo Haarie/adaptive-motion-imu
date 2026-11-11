@@ -4,3 +4,4 @@ obj/
 *.exe
 .vs/
 *.user
+enclosure/build/

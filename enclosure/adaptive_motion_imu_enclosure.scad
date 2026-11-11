@@ -11,7 +11,7 @@
 //
 // MEASURE YOUR BOARDS WITH CALIPERS and adjust the "board" section — clone boards vary ±0.5 mm.
 
-part = "assembly";      // base | lid | inlay | assembly
+part = "assembly";      // base | lid | inlay | assembly | fit | exploded
 $fn = 48;
 
 // ---------------- boards ------------------------------------------------------------------
@@ -157,16 +157,78 @@ module lid() {
 
 module inlay() { translate([0, 0, lid_t - 0.6]) text_label(0.6); }
 
+// ---------------- visual board models (for the fit pictures only, not printed) ------------
+module micro_model() {                       // origin = PCB corner, PCB bottom at z = 0
+    color("Teal") cube([micro_l, micro_w, micro_t]);
+    color("Black") translate([micro_l * 0.45, micro_w / 2 - 3.5, micro_t]) cube([7, 7, 1]);          // ATmega32U4
+    color("Silver") translate([-usb_overhang, micro_w / 2 - usb_w / 2, micro_t]) cube([5.7, usb_w, 2.8]);  // micro-USB
+    color("Silver") translate([micro_l * 0.25, 1.5, micro_t]) cube([3, 3, 1.5]);                    // reset button
+    for (i = [0 : 16], y = [0.9, micro_w - 0.9])                                                    // 2 x 17 pads
+        color("Gold") translate([2.2 + i * 2.54, y, micro_t]) cylinder(d = 1.6, h = 0.1);
+}
+module gy521_model() {
+    difference() {
+        color("RoyalBlue") cube([gy_l, gy_w, gy_t]);
+        for (i = [0, 1]) translate([(gy_l - gy_hole_pitch) / 2 + i * gy_hole_pitch, gy_w - gy_hole_inset, -1]) cylinder(d = gy_hole_d, h = 5);
+    }
+    color("Black") translate([gy_l / 2 - 2, gy_w / 2 - 2, gy_t]) cube([4, 4, 0.9]);                // MPU-6050
+    for (i = [0 : 7]) color("Gold") translate([gy_l / 2 - 3.5 * 2.54 + i * 2.54, 1.3, gy_t]) cylinder(d = 1.6, h = 0.1);
+}
+module shifter_model() {
+    color("MediumBlue") cube([shifter_l, shifter_w, 1.6]);
+    for (i = [0, 1, 2, 3]) color("Black") translate([2 + i * 3, shifter_w / 2 - 1, 1.6]) cube([2, 2, 0.9]);  // BSS138s
+    for (i = [0 : 5], x = [0.9, shifter_l - 0.9]) color("Gold") translate([x, 0.9 + i * 1.85, 1.6]) cylinder(d = 1.2, h = 0.1);
+}
+// a wire through a list of points, as hulled spheres
+module wire(pts, c, d = 1.0) { color(c) for (i = [0 : len(pts) - 2]) hull() { translate(pts[i]) sphere(d = d, $fn = 10); translate(pts[i + 1]) sphere(d = d, $fn = 10); } }
+
+M0 = [wall + micro_x0, wall + micro_y0, floor_t + micro_z0];
+G0 = [wall + gy_x0, wall + gy_y0, floor_t + gy_standoff];
+S0 = [wall + sh_x0, wall + sh_y0, floor_t + 1.0];
+module boards(dz = 0) {
+    translate(M0 + [0, 0, dz]) micro_model();
+    translate(G0 + [0, 0, dz]) gy521_model();
+    translate(S0 + [0, 0, dz]) shifter_model();
+    // M2.5 screws through the GY-521 into the bosses
+    for (i = [0, 1]) color("DimGray") translate(G0 + [(gy_l - gy_hole_pitch) / 2 + i * gy_hole_pitch, gy_w - gy_hole_inset, gy_t + dz]) {
+        cylinder(d = 4.5, h = 1.6); translate([0, 0, -6]) cylinder(d = 2.5, h = 6);
+    }
+}
+// illustrative wires: Micro pads (+Y edge, USB-far end) -> shifter HV side, shifter LV side -> GY-521 header
+wire_cols = ["Red", "Orange", "Black", "DodgerBlue", "LimeGreen"];
+module wires(dz = 0) {
+    zt = floor_t + micro_z0 + micro_t + 3.5 + dz;
+    for (k = [0 : 4]) {
+        p0 = M0 + [2.2 + (12 + k) * 2.54, micro_w - 0.9, micro_t + dz];
+        s_hv = S0 + [0.9, 0.9 + (k + 1) * 1.85 * 0.9, 1.7 + dz];
+        wire([p0, [p0[0], p0[1], zt + k * 0.4], [s_hv[0] - 3, p0[1] - k * 0.6, zt + k * 0.4], [s_hv[0] - 3, s_hv[1], zt - 1], s_hv], wire_cols[k]);
+    }
+    for (k = [1 : 4]) {
+        s_lv = S0 + [shifter_l - 0.9, 0.9 + (k + 1) * 1.85 * 0.9, 1.7 + dz];
+        g = G0 + [gy_l / 2 - 3.5 * 2.54 + (k - 1) * 2.54, 1.3, gy_t + dz];
+        wire([s_lv, [s_lv[0] + 1.2, s_lv[1], s_lv[2] + 2], [s_lv[0] + 1.2, g[1] - 2.5 - k * 0.5, s_lv[2] + 2.5 + k * 0.4],
+              [g[0], g[1] - 2.5 - k * 0.5, s_lv[2] + 2.5 + k * 0.4], [g[0], g[1], g[2] + 2], g], wire_cols[k]);
+    }
+}
+
 if (part == "base") base();
 else if (part == "lid") print_flip() lid();       // printed top face down
 else if (part == "inlay") print_flip() inlay();   // same coordinates as the lid -> load both as one object
+else if (part == "fit") {                          // boards installed, lid off
+    color("SteelBlue") base();
+    boards(); wires();
+}
+else if (part == "exploded") {                     // base, boards lifted 18 mm, lid lifted 42 mm
+    color("SteelBlue") base();
+    boards(18); wires(18);
+    color("Gainsboro") translate([0, 0, base_h + 42]) lid();
+    color("Orange") translate([0, 0, base_h + 42]) inlay();
+}
 else {
     color("SteelBlue") base();
     color("Gainsboro", 0.6) translate([0, 0, base_h + 12]) lid();
     color("Orange") translate([0, 0, base_h + 12]) inlay();
-    // ghost boards
-    color("Teal", 0.8) translate([wall + micro_x0, wall + micro_y0, floor_t + micro_z0]) cube([micro_l, micro_w, micro_t]);
-    color("DarkBlue", 0.8) translate([wall + gy_x0, wall + gy_y0, floor_t + gy_standoff]) cube([gy_l, gy_w, gy_t]);
+    boards();
 }
 
 // Rotate (not mirror!) 180° about X so the top face lies on the bed and text stays readable.
