@@ -8,7 +8,7 @@ W=1600; ink=(40,44,52)
 notes=["Box along a horizontal 30/40 profile, on its vertical side face; both M6 bolts in that face's horizontal slot",
        "Hardware: 2 x M6 x 16 DIN 912 + washer, 2 x M6 slot-8 T-nuts (drop-in or slide-in)",
        "Bolt pitch 32 mm, +-3 mm play; 6 mm flange + 3 gussets; box sits beside the slot (above or below, flip it)",
-       "Any angle works: run Auto-align in the plugin (rest, then nose-up) - FWD arrow is only a hint",
+       "Lid faces the rig front (mount on the rear face: lid faces rear). Run Auto-align either way",
        "Mount it on the moving seat frame, not the base frame; USB lead with a cable tie on the tab"]
 H=90+img.height+30+len(notes)*36+30
 out=Image.new("RGB",(W,H),(248,248,248)); d=ImageDraw.Draw(out)

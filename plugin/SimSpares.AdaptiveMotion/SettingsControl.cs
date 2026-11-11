@@ -44,7 +44,7 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Buttons(
                 Btn("Auto-align 1: rest (rig at centre)", () => _p.StartAlignCapture(true)),
                 Btn("Auto-align 2: nose-up held (≥ 2°)", () => _p.StartAlignCapture(false))));
-            root.Children.Add(Row("…or manual: sensor axis pointing forward", EnumBox(s.MountForward, v => s.MountForward = v)));
+            root.Children.Add(Row("…or manual: sensor axis pointing forward (side mount: +Z lid to front, -Z lid to rear)", EnumBox(s.MountForward, v => s.MountForward = v)));
             root.Children.Add(Row("…or manual: sensor axis pointing up", EnumBox(s.MountUp, v => s.MountUp = v)));
             root.Children.Add(Row("Device DLPF (0-6)", IntBox(s.DeviceDlpf, v => s.DeviceDlpf = v)));
             root.Children.Add(Row("Device output divider (500/n Hz)", IntBox(s.DeviceOutputDivider, v => s.DeviceOutputDivider = v)));

@@ -79,11 +79,25 @@ module rounded_box(l, w, h, r = 2) {
     hull() for (x = [r, l - r], y = [r, w - r]) translate([x, y, 0]) cylinder(r = r, h = h);
 }
 
+// Lid marking. On the "side" mount the box's long axis runs along the (transverse) beam, so the rig's
+// forward direction points out of the lid: the lid shows UP (away from the flange) instead.
+label = mount_style == "side" ? "up" : "fwd";
+
 module text_label(depth) {
-    // arrow + text on the lid, pointing to rig front (+X of the box)
-    translate([outer_l / 2 - 4, outer_w / 2, 0]) linear_extrude(depth) {
-        translate([-20, 0]) text("FWD", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
-        translate([4, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
+    if (label == "up") {
+        // arrow pointing +Y (away from the mounting flange = up when the box sits above the slot)
+        translate([outer_l / 2 + 8, outer_w / 2, 0]) linear_extrude(depth)
+            rotate(90) translate([-10.5, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
+        translate([outer_l / 2 - 10, outer_w / 2, 0]) linear_extrude(depth)
+            text("UP", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
+        translate([outer_l / 2 + 30, outer_w / 2, 0]) linear_extrude(depth)
+            text("LID = FRONT", size = 3.2, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
+    } else {
+        // arrow + text pointing to rig front (+X of the box)
+        translate([outer_l / 2 - 4, outer_w / 2, 0]) linear_extrude(depth) {
+            translate([-20, 0]) text("FWD", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
+            translate([4, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
+        }
     }
 }
 

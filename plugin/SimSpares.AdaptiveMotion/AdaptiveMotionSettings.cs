@@ -17,8 +17,11 @@ namespace SimSpares.AdaptiveMotion
     {
         // --- sensor -------------------------------------------------------------------------
         public string ComPort = "";
-        public Axis MountForward = Axis.PosX;    // which sensor axis points to the front of the rig
-        public Axis MountUp = Axis.PosZ;         // which sensor axis points up
+        // Defaults match the "side" enclosure on a transverse beam: lid towards the rig front (sensor +Z),
+        // flange down / box above the slot (sensor +Y up), assuming the GY-521's X axis runs along the box.
+        // On the rear face of the beam use NegZ. Auto-align replaces these with measured axes.
+        public Axis MountForward = Axis.PosZ;    // which sensor axis points to the front of the rig
+        public Axis MountUp = Axis.PosY;         // which sensor axis points up
         public bool MountAuto = false;           // use the auto-aligned vectors below instead of MountForward/MountUp
         public double[] MountAutoForward = null; // rig forward in sensor coordinates (Auto-align)
         public double[] MountAutoUp = null;      // rig up in sensor coordinates (Auto-align)
