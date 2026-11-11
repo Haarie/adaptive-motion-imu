@@ -43,6 +43,29 @@ namespace SimSpares.AdaptiveMotion.Core
             LevelCaptured = false; _refPitch = _refRoll = 0;
         }
 
+        /// <summary>
+        /// Arbitrary mounting (from MountAligner): rig forward and up as vectors in sensor coordinates.
+        /// Forward is re-orthogonalised against up. The level reference is reset to zero because "up"
+        /// was measured at the level pose.
+        /// </summary>
+        public void SetMountingVectors(double[] forward, double[] up)
+        {
+            if (forward == null || up == null || forward.Length != 3 || up.Length != 3) throw new ArgumentException("need two 3-vectors");
+            var u = Normalize(up);
+            double d = Dot(forward, u);
+            var f = Normalize(new[] { forward[0] - d * u[0], forward[1] - d * u[1], forward[2] - d * u[2] });
+            var l = Cross(u, f);
+            _r = new double[3, 3] { { f[0], f[1], f[2] }, { l[0], l[1], l[2] }, { u[0], u[1], u[2] } };
+            _refPitch = _refRoll = 0; LevelCaptured = true;
+        }
+
+        private static double[] Normalize(double[] v)
+        {
+            double n = Math.Sqrt(Dot(v, v));
+            if (n < 1e-9) throw new ArgumentException("zero vector");
+            return new[] { v[0] / n, v[1] / n, v[2] / n };
+        }
+
         public void SetLevelReference(double pitchDeg, double rollDeg)
         {
             _refPitch = pitchDeg; _refRoll = rollDeg; LevelCaptured = true;

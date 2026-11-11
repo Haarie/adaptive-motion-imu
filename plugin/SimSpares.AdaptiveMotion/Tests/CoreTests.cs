@@ -24,6 +24,7 @@ static class CoreTests
         LagTests();
         ParkTests();
         VisualTests();
+        AlignTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -378,5 +379,71 @@ static class CoreTests
         VisualMath.Horizon(0, 90, 4, 100, out rot, out sh);
         Check(Near(sh, 90, 1e-9), "horizon shift clamped inside the instrument");
         Check(VisualMath.NiceRange(16.1) == 20 && VisualMath.NiceRange(0.7) == 1, "nice axis range");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Auto-align: sensor bolted at an arbitrary angle. Build the sensor->rig rotation from Euler
+    // angles, simulate rest + nose-up captures, then check that the estimator reads the rig's own
+    // pitch/roll correctly for new poses.
+    static double[,] Rot(double rx, double ry, double rz)   // rig -> sensor, degrees
+    {
+        double a = rx * Math.PI / 180, b = ry * Math.PI / 180, c = rz * Math.PI / 180;
+        var X = new double[,] { { 1, 0, 0 }, { 0, Math.Cos(a), -Math.Sin(a) }, { 0, Math.Sin(a), Math.Cos(a) } };
+        var Y = new double[,] { { Math.Cos(b), 0, Math.Sin(b) }, { 0, 1, 0 }, { -Math.Sin(b), 0, Math.Cos(b) } };
+        var Z = new double[,] { { Math.Cos(c), -Math.Sin(c), 0 }, { Math.Sin(c), Math.Cos(c), 0 }, { 0, 0, 1 } };
+        return Mul(Z, Mul(Y, X));
+    }
+    static double[,] Mul(double[,] a, double[,] b)
+    {
+        var r = new double[3, 3];
+        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) for (int k = 0; k < 3; k++) r[i, j] += a[i, k] * b[k, j];
+        return r;
+    }
+    static double[] Apply(double[,] m, double[] v) => new[]
+    {
+        m[0,0]*v[0]+m[0,1]*v[1]+m[0,2]*v[2], m[1,0]*v[0]+m[1,1]*v[1]+m[1,2]*v[2], m[2,0]*v[0]+m[2,1]*v[1]+m[2,2]*v[2]
+    };
+    // world "up" seen in the RIG frame for a rig pose (+pitch nose up, +roll right side down)
+    static double[] UpInRig(double pitchDeg, double rollDeg)
+    {
+        double p = pitchDeg * Math.PI / 180, r = rollDeg * Math.PI / 180;
+        return new[] { Math.Sin(p), Math.Cos(p) * Math.Sin(r), Math.Cos(p) * Math.Cos(r) };
+    }
+    // a still IMU frame whose quaternion encodes the given sensor-frame up vector (yaw arbitrary)
+    static ImuFrame FrameForUp(double[] u)
+    {
+        // quaternion rotating sensor z to u: up = (2(q1q3-q0q2), 2(q0q1+q2q3), q0^2-q1^2-q2^2+q3^2)
+        double roll = Math.Atan2(u[1], u[2]), pitch = Math.Atan2(-u[0], Math.Sqrt(u[1] * u[1] + u[2] * u[2]));
+        double cr = Math.Cos(roll / 2), sr = Math.Sin(roll / 2), cp = Math.Cos(pitch / 2), sp = Math.Sin(pitch / 2);
+        return new ImuFrame { Q0 = cr * cp, Q1 = sr * cp, Q2 = cr * sp, Q3 = -sr * sp, Ax = u[0], Ay = u[1], Az = u[2] };
+    }
+
+    static void AlignTests()
+    {
+        var mounts = new[] { new[] { 0.0, 0, 0 }, new[] { 90.0, 0, 0 }, new[] { 90.0, 0, 33 }, new[] { -90.0, 17, 120 }, new[] { 180.0, 5, -60 } };
+        foreach (var m in mounts)
+        {
+            var R = Rot(m[0], m[1], m[2]);
+            var al = new MountAligner();
+            al.BeginCapture(); var rest = Apply(R, UpInRig(0, 0)); for (int i = 0; i < 300; i++) al.Add(rest[0], rest[1], rest[2]);
+            al.EndRest(out _);
+            al.BeginCapture(); var nu = Apply(R, UpInRig(4, 0)); for (int i = 0; i < 300; i++) al.Add(nu[0], nu[1], nu[2]);
+            al.EndNoseUp(out _);
+            bool ok = al.Solve(out var fwd, out var up, out var tilt, out var err);
+            var est = new PlatformEstimator();
+            if (ok) est.SetMountingVectors(fwd, up);
+            var s1 = est.Update(FrameForUp(Apply(R, UpInRig(6, 0))), 0);
+            var s2 = est.Update(FrameForUp(Apply(R, UpInRig(0, -5))), 0);
+            var s3 = est.Update(FrameForUp(Apply(R, UpInRig(3, 4))), 0);
+            Check(ok && Near(tilt, 4, 0.01) && Near(s1.PitchDeg, 6, 0.05) && Near(s1.RollDeg, 0, 0.05) && Near(s2.RollDeg, -5, 0.05) && Near(s2.PitchDeg, 0, 0.05)
+                  && Near(s3.PitchDeg, 3, 0.05) && Near(s3.RollDeg, 4, 0.1),
+                  $"auto-align mount ({m[0]},{m[1]},{m[2]}): pitch {s1.PitchDeg:F2}/{s3.PitchDeg:F2} roll {s2.RollDeg:F2}/{s3.RollDeg:F2} {err}");
+        }
+        var bad = new MountAligner();
+        bad.BeginCapture(); for (int i = 0; i < 300; i++) bad.Add(0, 0, 1); bad.EndRest(out _);
+        bad.BeginCapture(); for (int i = 0; i < 300; i++) bad.Add(0.01, 0, 1); bad.EndNoseUp(out _);
+        Check(!bad.Solve(out _, out _, out _, out var e2) && e2.Contains("at least"), "too small a nose-up tilt is refused");
+        var moving = new MountAligner(); moving.BeginCapture(); for (int i = 0; i < 300; i++) moving.Add(0, 0, 1.4);
+        Check(!moving.EndRest(out var e3) && e3.Contains("not still"), "capture while moving is refused");
     }
 }

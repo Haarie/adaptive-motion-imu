@@ -1,7 +1,8 @@
 // AdaptiveMotionIMU enclosure — Arduino Micro (headerless) + GY-521 (MPU-6050)
-// Rigid two-part box that bolts to aluminium extrusion (2020/3030/4040 T-nuts, M5) or flat steel.
+// Rigid two-part box that bolts to aluminium extrusion with two M6 bolts + T-nuts (30/40 series, slot 8),
+// either ACROSS a (vertical) profile — default — or ALONG it, see mount_style.
 // Design rule: the sensor must move EXACTLY like the seat. So: thick floor, sensor screwed to
-// bosses that grow out of the floor, ears bolted with two M5 bolts, print in PETG/ASA, 100 % infill
+// bosses that grow out of the floor, two M6 bolts into one slot of the profile, print in PETG/ASA, 100 % infill
 // around the sensor pocket (or simply 6 perimeters + 40 % gyroid everywhere).
 //
 // Render parts:  openscad -D 'part="base"'  -o base.stl  adaptive_motion_imu_enclosure.scad
@@ -43,9 +44,22 @@ outer_l = inner_l + 2 * wall;
 outer_w = inner_w + 2 * wall;
 base_h  = floor_t + inner_h;
 
-// mounting ears (M5, 20 mm-pitch-agnostic: two bolts along the extrusion)
-ear_l = 14;  ear_t = 5.0;  m5_d = 5.5;  m5_cb_d = 9.6;  m5_cb_h = 0;   // set cb_h>0 for socket heads
-ear_slot = 4;           // slot length to absorb hole-position tolerance
+// ---------------- mounting ----------------------------------------------------------------
+// "across": the box lies across the profile (e.g. a vertical upright, box horizontal); a mounting
+//           plate under the middle of the box carries the two bolts above and below the box, both in
+//           the same profile slot, so the box can't twist. Slots are long along the profile.
+// "along":  ears at both ends, bolts along the box's long axis (profile parallel to the box).
+// The box need not be square to the rig: the plugin's Auto-align measures the real mounting angle.
+mount_style = "across";
+bolt_d = 6.6;           // M6 clearance
+bolt_head_d = 11.0;     // DIN 912 / ISO 7380 M6 head + washer room
+bolt_slot = 6;          // slot length (mm of play along the profile)
+plate_t = 6.0;          // mounting plate thickness ("across")
+plate_l = 34;           // plate length along the box (x) ("across")
+plate_ext = 20;         // plate reach beyond each long side of the box (y) ("across")
+bolt_off = plate_ext / 2 + 1;   // bolt centre distance from the box side ("across")
+ear_l = 16;  ear_t = 6.0;   // ears ("along"), and the flat cable-tie tab at the USB end ("across")
+tab_l = 10;
 
 // positions (inside-cavity coordinates, origin at inner corner)
 micro_x0 = usb_overhang + 0.6;             // PCB starts here; USB receptacle ~0.6 mm from the wall
@@ -66,8 +80,6 @@ module text_label(depth) {
         translate([-20, 0]) text("FWD", size = 6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
         translate([4, 0]) polygon([[0, -2], [14, -2], [14, -4.5], [21, 0], [14, 4.5], [14, 2], [0, 2]]);
     }
-    translate([outer_l - 10, outer_w / 2, 0]) linear_extrude(depth)
-        text("UP", size = 3.2, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center");
 }
 
 module base() {
@@ -79,20 +91,36 @@ module base() {
                 translate([p[0], p[1], 0]) cylinder(d = lug_d, h = base_h);
                 translate([p[0] - lug_d / 2, p[1] < 0 ? 0.5 : outer_w - 1.5, 0]) cube([lug_d, 1, base_h]);
             }
-            // ears
-            // -X ear stays flat so the USB plug clears it; +X ear gets a stiffening gusset
-            translate([-ear_l, 0, 0]) cube([ear_l + 1, outer_w, ear_t]);
-            translate([outer_l - 1, 0, 0]) hull() {
-                cube([ear_l + 1, outer_w, ear_t]);
-                cube([1, outer_w, ear_t + 5]);
+            if (mount_style == "along") {
+                // -X ear stays flat so the USB plug clears it; +X ear gets a stiffening gusset
+                translate([-ear_l, 0, 0]) cube([ear_l + 1, outer_w, ear_t]);
+                translate([outer_l - 1, 0, 0]) hull() {
+                    cube([ear_l + 1, outer_w, ear_t]);
+                    cube([1, outer_w, ear_t + 5]);
+                }
+            } else {
+                // mounting plate under the middle of the box, reaching past both long sides
+                translate([outer_l / 2 - plate_l / 2, -plate_ext, 0]) cube([plate_l, outer_w + 2 * plate_ext, plate_t]);
+                // four gussets tie the plate to the side walls, clear of the bolt heads
+                for (gx = [outer_l / 2 - plate_l / 2, outer_l / 2 + plate_l / 2 - 3], side = [0, 1])
+                    hull() {
+                        translate([gx, side == 0 ? -plate_ext + 1 : outer_w + plate_ext - 2, 0]) cube([3, 1, plate_t]);
+                        translate([gx, side == 0 ? 0 : outer_w - 1, 0]) cube([3, 1, base_h - 3]);
+                    }
+                // flat tab at the USB end for cable-tie strain relief
+                translate([-tab_l, 0, 0]) cube([tab_l + 1, outer_w, 4]);
             }
         }
         // cavity
         translate([wall, wall, floor_t]) rounded_box(inner_l, inner_w, inner_h + 1, 1);
-        // M5 slots in the ears
-        for (x = [-ear_l / 2 - 2, outer_l + ear_l / 2]) translate([x, outer_w / 2, -1]) {
-            hull() for (dx = [-ear_slot / 2, ear_slot / 2]) translate([dx, 0, 0]) cylinder(d = m5_d, h = ear_t + 10);
-            if (m5_cb_h > 0) translate([0, 0, ear_t - m5_cb_h + 1]) hull() for (dx = [-ear_slot / 2, ear_slot / 2]) translate([dx, 0, 0]) cylinder(d = m5_cb_d, h = 20);
+        if (mount_style == "along") {
+            // M6 slots in the ears, long along the box
+            for (x = [-ear_l / 2 - 2, outer_l + ear_l / 2]) translate([x, outer_w / 2, -1])
+                hull() for (dx = [-bolt_slot / 2, bolt_slot / 2]) translate([dx, 0, 0]) cylinder(d = bolt_d, h = ear_t + 10);
+        } else {
+            // M6 slots in the plate, long along the profile (y)
+            for (y = [-bolt_off, outer_w + bolt_off]) translate([outer_l / 2, y, -1])
+                hull() for (dy = [-bolt_slot / 2, bolt_slot / 2]) translate([0, dy, 0]) cylinder(d = bolt_d, h = plate_t + 10);
         }
         // USB opening in the -X wall, centred on the Micro's receptacle (room for the plug overmould)
         translate([-1, wall + micro_y0 + micro_w / 2 - 5.5, floor_t + micro_z0 + micro_t - 2.0]) cube([wall + 2, 11, usb_h + 4.5]);
@@ -218,6 +246,9 @@ else if (part == "fit") {                          // boards installed, lid off
     color("SteelBlue") base();
     boards(); wires();
 }
+else if (part == "mounted") {                      // on a vertical 40x40 profile, box across it
+    profile_scene();
+}
 else if (part == "exploded") {                     // base, boards lifted 18 mm, lid lifted 42 mm
     color("SteelBlue") base();
     boards(18); wires(18);
@@ -231,8 +262,35 @@ else {
     boards();
 }
 
+// ---------------- mounting scene: vertical 40x40 slot-8 profile, M6 bolts + T-nuts ------------
+module profile40(h) {
+    color("Silver") difference() {
+        translate([-20, 0, -h / 2]) cube([40, 40, h]);
+        for (a = [0, 90, 180, 270]) translate([0, 20, 0]) rotate([0, 0, a]) translate([0, -20, 0]) {
+            translate([-4.1, -1, -h]) cube([8.2, 4.5, 2 * h]);       // slot opening
+            translate([-8, 2.5, -h]) cube([16, 6, 2 * h]);           // undercut
+        }
+        translate([0, 20, -h]) cylinder(d = 7, h = 2 * h);
+    }
+}
+module profile_scene() {
+    profile40(200);
+    // box: its bottom on the profile face (y = 0), long axis horizontal, bolt line along the profile
+    rotate([90, 0, 0]) translate([-outer_l / 2, -outer_w / 2, 0]) {
+        color("SteelBlue") base();
+        color("Gainsboro") translate([0, 0, base_h]) lid();
+        color("Orange") translate([0, 0, base_h]) inlay();
+        for (y = [-bolt_off, outer_w + bolt_off]) translate([outer_l / 2, y, 0]) {
+            color("DimGray") translate([0, 0, plate_t]) cylinder(d = 10, h = 6);                 // M6 head
+            color("DimGray") translate([0, 0, -9]) cylinder(d = 6, h = plate_t + 9);             // shank
+            color("Goldenrod") translate([-5, -8, -7]) cube([10, 16, 4]);                        // T-nut in the slot
+        }
+    }
+}
+
 // Rotate (not mirror!) 180° about X so the top face lies on the bed and text stays readable.
 module print_flip() translate([0, outer_w, lid_t]) rotate([180, 0, 0]) children();
 
-echo(str("Outer box: ", outer_l, " x ", outer_w, " x ", base_h + lid_t, " mm; with ears: ", outer_l + 2 * ear_l,
-         " mm; M5 slot centre distance: ", outer_l + ear_l + 2, " mm"));
+echo(str("Outer box: ", outer_l, " x ", outer_w, " x ", base_h + lid_t, " mm; mount ", mount_style, ": ",
+         mount_style == "across" ? str("M6 bolt pitch ", outer_w + 2 * bolt_off, " mm along the profile, plate ", plate_l, " x ", outer_w + 2 * plate_ext, " mm")
+                                 : str("M6 slot centre distance ", outer_l + ear_l + 2, " mm along the box")));

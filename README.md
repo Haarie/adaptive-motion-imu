@@ -16,7 +16,7 @@ plugin/SimSpares.AdaptiveMotion/
   SettingsControl.cs                        settings page (code-built WPF)
   Core/                                     SimHub-independent logic (tested)
   IO/                                       serial link + UDP proxy
-  Tests/CoreTests.cs                        58 tests
+  Tests/CoreTests.cs                        65 tests
   UI/MotionVisualizer.cs                    live view (horizon, g-g, meters, gains, 10 s trend)
   UI/VisualizerWindow.cs                    pop-out window for a second screen
 plugin/tools/check.sh                       Mono: tests + stub compile + live-view preview render: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
@@ -46,7 +46,19 @@ SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a se
 - Header badges: controller status, mode, sensor rate, STILL, MOUNT SHIFTED, CLONE IMU, LEVEL NOT CAPTURED.
 (The preview image is rendered off-Windows through an SVG stand-in, so fonts differ slightly from SimHub.)
 
+## Mounting
+Default `mount_style = "across"`: the box sits across a (vertical) 30/40-series slot-8 profile on a mounting
+plate with two M6 slots, 49.4 mm apart along the profile (±3 mm play), both in the same profile slot.
+Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. `mount_style = "along"` gives M6 ears at the
+box ends instead. The box does not have to be square to the rig: use **Auto-align** (below).
+
+![mounting](docs/enclosure_mounting.png)
+
 ## Calibration
+- **Auto-align (any mounting angle)**: 1) rig at centre, still → *Auto-align 1: rest*; 2) pitch the rig
+  nose-up ≥ 2° (pure pitch, e.g. SimHub/nullCAT manual move) and hold → *Auto-align 2: nose-up*.
+  The plugin derives the rig's up and forward axes in sensor coordinates (and sets level). Re-run it
+  whenever the box is re-mounted. The manual axis pickers remain for square mounts.
 - **Gyro bias** is learned automatically by the firmware whenever the rig is still for 2 s (AUTOCAL, on by default),
   so it follows the sensor as it warms up. `GyroCalibrate` remains for a forced 2 s calibration.
 - **Level** is captured once, with the rig at its *centre* position (`CaptureLevel`) — never automatically,

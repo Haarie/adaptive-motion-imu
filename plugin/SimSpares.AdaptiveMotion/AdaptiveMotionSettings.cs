@@ -19,6 +19,9 @@ namespace SimSpares.AdaptiveMotion
         public string ComPort = "";
         public Axis MountForward = Axis.PosX;    // which sensor axis points to the front of the rig
         public Axis MountUp = Axis.PosZ;         // which sensor axis points up
+        public bool MountAuto = false;           // use the auto-aligned vectors below instead of MountForward/MountUp
+        public double[] MountAutoForward = null; // rig forward in sensor coordinates (Auto-align)
+        public double[] MountAutoUp = null;      // rig up in sensor coordinates (Auto-align)
         public bool LevelCaptured = false;
         public double LevelPitchDeg = 0;
         public double LevelRollDeg = 0;

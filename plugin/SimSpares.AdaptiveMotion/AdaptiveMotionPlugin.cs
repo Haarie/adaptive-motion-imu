@@ -42,6 +42,10 @@ namespace SimSpares.AdaptiveMotion
         private double _levelUntil = double.NaN, _levelSumP, _levelSumR; private int _levelN;
         // neutral capture
         private double _neutralUntil = double.NaN;
+        // auto-align capture
+        internal readonly MountAligner Aligner = new MountAligner();
+        private double _alignUntil = double.NaN;
+        private bool _alignIsRest;
         // SimHub gain-event mode
         private int _gainStepsDown; private double _lastStepSec;
 
@@ -96,7 +100,13 @@ namespace SimSpares.AdaptiveMotion
         /// <summary>(Re)start everything from Settings. Safe to call from the UI thread.</summary>
         public void ApplySettings()
         {
-            try { Estimator.SetMounting(Settings.MountForward, Settings.MountUp); }
+            try
+            {
+                if (Settings.MountAuto && Settings.MountAutoForward != null && Settings.MountAutoUp != null)
+                    Estimator.SetMountingVectors(Settings.MountAutoForward, Settings.MountAutoUp);
+                else
+                    Estimator.SetMounting(Settings.MountForward, Settings.MountUp);
+            }
             catch (Exception e) { Note("Mounting: " + e.Message); }
             if (Settings.LevelCaptured) Estimator.SetLevelReference(Settings.LevelPitchDeg, Settings.LevelRollDeg);
             Controller.UpdateSettings(Settings.Controller);
@@ -131,6 +141,12 @@ namespace SimSpares.AdaptiveMotion
         {
             double now = ImuSerialLink.NowSec;
             var st = Estimator.Update(f, now);
+
+            if (!double.IsNaN(_alignUntil))
+            {
+                Aligner.Add(f.Ax, f.Ay, f.Az);
+                if (now >= _alignUntil) FinishAlignCapture();
+            }
 
             if (!double.IsNaN(_levelUntil))
             {
@@ -265,6 +281,7 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Tracking.RollCoherence", () => Math.Round(RollTracking.Coherence, 2));
 
             this.AttachDelegate("Sensor.Still", () => (State.Flags & ImuFlags.Still) != 0);
+            this.AttachDelegate("Mount.Auto", () => Settings.MountAuto);
             this.AttachDelegate("Park.State", () => Park.State.ToString());
             this.AttachDelegate("Park.ReferenceLearned", () => Park.HasReference);
             this.AttachDelegate("Park.DeviationDeg", () => double.IsNaN(Park.LastDeviationDeg) ? -1 : Math.Round(Park.LastDeviationDeg, 2));
@@ -290,7 +307,42 @@ namespace SimSpares.AdaptiveMotion
             this.AddAction("ResetGains", (a, b) => { Controller.ResetGains(); Note("Gains reset"); });
             this.AddAction("CaptureNeutral", (a, b) => StartNeutralCapture());
             this.AddAction("RelearnParkPose", (a, b) => RelearnParkPose());
+            this.AddAction("AutoAlignRest", (a, b) => StartAlignCapture(true));
+            this.AddAction("AutoAlignNoseUp", (a, b) => StartAlignCapture(false));
             this.AddAction("ShowGyroBias", (a, b) => Imu.Send("BIAS"));
+        }
+
+        /// <summary>Auto-align step 1 (rig at centre, still) or step 2 (rig pitched nose-up ≥ 2°, still).</summary>
+        public void StartAlignCapture(bool rest)
+        {
+            _alignIsRest = rest;
+            Aligner.BeginCapture();
+            _alignUntil = ImuSerialLink.NowSec + 1.5;
+            Note(rest ? "Auto-align 1/2: capturing REST for 1.5 s — rig at centre, keep still"
+                      : "Auto-align 2/2: capturing NOSE-UP for 1.5 s — rig pitched nose-up (pure pitch, ≥ 2°), keep still");
+        }
+
+        private void FinishAlignCapture()
+        {
+            _alignUntil = double.NaN;
+            string err;
+            bool ok = _alignIsRest ? Aligner.EndRest(out err) : Aligner.EndNoseUp(out err);
+            if (!ok) { Note("Auto-align capture failed: " + err); return; }
+            if (_alignIsRest) { Note("Auto-align: REST captured. Now pitch the rig nose-up ≥ 2°, hold it, and capture NOSE-UP."); return; }
+
+            if (!Aligner.Solve(out var fwd, out var up, out var tilt, out err)) { Note("Auto-align failed: " + err); return; }
+            Settings.MountAuto = true;
+            Settings.MountAutoForward = fwd;
+            Settings.MountAutoUp = up;
+            Settings.LevelCaptured = true;               // "up" was measured at the level pose
+            Settings.LevelPitchDeg = 0; Settings.LevelRollDeg = 0;
+            Estimator.SetMountingVectors(fwd, up);
+            Settings.ParkReferenceLearned = false;       // new frame of reference: re-learn the parked pose
+            Park.ClearReference();
+            SaveSettings();
+            Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "Auto-align done (tilt used {0:F1}°): forward = ({1:F2}, {2:F2}, {3:F2}), up = ({4:F2}, {5:F2}, {6:F2}) in sensor axes. Level set.",
+                tilt, fwd[0], fwd[1], fwd[2], up[0], up[1], up[2]));
         }
 
         public void StartLevelCapture()

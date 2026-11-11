@@ -40,8 +40,12 @@ namespace SimSpares.AdaptiveMotion
             port.LostFocus += (o, e) => s.ComPort = port.Text.Trim();
             port.SelectionChanged += (o, e) => { if (port.SelectedItem != null) s.ComPort = port.SelectedItem.ToString(); };
             root.Children.Add(Row("COM port", port));
-            root.Children.Add(Row("Sensor axis pointing forward", EnumBox(s.MountForward, v => s.MountForward = v)));
-            root.Children.Add(Row("Sensor axis pointing up", EnumBox(s.MountUp, v => s.MountUp = v)));
+            root.Children.Add(Row("Use auto-aligned mounting (any angle)", Check(s.MountAuto, v => s.MountAuto = v)));
+            root.Children.Add(Buttons(
+                Btn("Auto-align 1: rest (rig at centre)", () => _p.StartAlignCapture(true)),
+                Btn("Auto-align 2: nose-up held (≥ 2°)", () => _p.StartAlignCapture(false))));
+            root.Children.Add(Row("…or manual: sensor axis pointing forward", EnumBox(s.MountForward, v => s.MountForward = v)));
+            root.Children.Add(Row("…or manual: sensor axis pointing up", EnumBox(s.MountUp, v => s.MountUp = v)));
             root.Children.Add(Row("Device DLPF (0-6)", IntBox(s.DeviceDlpf, v => s.DeviceDlpf = v)));
             root.Children.Add(Row("Device output divider (500/n Hz)", IntBox(s.DeviceOutputDivider, v => s.DeviceOutputDivider = v)));
             root.Children.Add(Row("Learn gyro bias whenever still", Check(s.AutoGyroCal, v => s.AutoGyroCal = v)));
