@@ -93,6 +93,9 @@ slot-8 drop-in T-nuts, ISO 7380 M3 lid screws and a USB-C lead, rendered in Blen
 
 ![mounting](docs/enclosure_mounting.png)
 
+**PrusaSlicer project:** open `enclosure/adaptive_motion_imu_print.3mf` (base + lid with its three inlays already
+assigned to filaments 1–4; regenerate with `python3 enclosure/make_3mf.py`).
+
 **Lid print (Prusa MK3.5S + MMU3):** load `lid.stl` and the three `lid_inlay_*.stl` together as one multi-part
 object (they share coordinates), lid in black/carbon PETG, inlays green #A6FF4D, orange #FF7A29, white #F3F5F1.
 The artwork is the bottom 0.6 mm (printed face-down on a textured or smooth sheet), so the colour changes
