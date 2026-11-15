@@ -95,7 +95,7 @@
 // ----------------------------------------------------------------------------
 // Build configuration
 // ----------------------------------------------------------------------------
-#define FW_VERSION        "1.2.0"
+#define FW_VERSION        "1.2.1"
 #define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
 #define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
 #define SAMPLE_HZ         500         // internal fusion rate
@@ -118,7 +118,8 @@
 #define STILL_WIN         250         // samples per window (0.5 s @ 500 Hz)
 #define STILL_WINDOWS     4           // consecutive still windows before "still" (2 s)
 #define STILL_GYRO_PP_DPS 1.5f        // max peak-to-peak gyro per axis inside a window
-#define STILL_ACC_G       0.03f       // max | |a| - 1 g | inside a window
+#define STILL_ACC_PP_G    0.03f       // max peak-to-peak of |a| inside a window (vibration / motion)
+#define STILL_ACC_ABS_G   0.15f       // |a| must still be within 1 g +- this (MPU-6050 scale is often 3-5 % off)
 #define STILL_TILT_DEG    0.10f       // max gravity-direction change between windows (rejects slow rotation)
 #define BIAS_ALPHA        0.25f       // blend of each new still-window mean into the bias
 #define BIAS_MAX_STEP_DPS 0.25f       // max bias change per window (slew limit)
@@ -196,7 +197,7 @@ static float   hpPrev[3], hpOut[3];      // high-pass filter state (accel, g)
 static float   hpAlpha;
 
 // stillness detector state
-static float   sAcc[3], sGyr[3], sGmin[3], sGmax[3], sAccDevMax;
+static float   sAcc[3], sGyr[3], sGmin[3], sGmax[3], sAnMin, sAnMax;
 static float   sPrevAcc[3];
 static bool    sPrevValid = false;
 static uint16_t sN = 0;
@@ -436,7 +437,7 @@ static bool readRaw(float &ax, float &ay, float &az, float &gx, float &gy, float
 // ----------------------------------------------------------------------------
 static void stillReset() {
   for (uint8_t i = 0; i < 3; i++) { sAcc[i] = 0; sGyr[i] = 0; sGmin[i] = 1e9f; sGmax[i] = -1e9f; }
-  sAccDevMax = 0; sN = 0;
+  sAnMin = 99.0f; sAnMax = 0.0f; sN = 0;
 }
 
 static void stillUpdate(float ax, float ay, float az, float gx, float gy, float gz, float an) {
@@ -448,13 +449,14 @@ static void stillUpdate(float ax, float ay, float az, float gx, float gy, float 
     if (raw[i] < sGmin[i]) sGmin[i] = raw[i];
     if (raw[i] > sGmax[i]) sGmax[i] = raw[i];
   }
-  float dev = fabsf(an - 1.0f);
-  if (dev > sAccDevMax) sAccDevMax = dev;
+  if (an < sAnMin) sAnMin = an;
+  if (an > sAnMax) sAnMax = an;
   if (++sN < STILL_WIN) return;
 
   // ---- window complete ----
   float m[3], g[3];
-  bool still = sAccDevMax < STILL_ACC_G;
+  // Steadiness of |a| (not its absolute value): a cheap MPU-6050 often reads 0.95-1.05 g at rest.
+  bool still = (sAnMax - sAnMin) < STILL_ACC_PP_G && fabsf(0.5f * (sAnMax + sAnMin) - 1.0f) < STILL_ACC_ABS_G;
   for (uint8_t i = 0; i < 3; i++) {
     m[i] = sAcc[i] / STILL_WIN;
     g[i] = sGyr[i] / STILL_WIN;
@@ -601,6 +603,7 @@ static void handleCmd(char *c) {
 static void pollSerial() {
   while (Serial.available()) {
     char ch = (char)Serial.read();
+    hostOpen = true;   // the host is talking to us, so the port is open (DTR is only polled 2x/s)
     if (ch == '\n' || ch == '\r') {
       if (cmdLen) { cmdBuf[cmdLen] = 0; handleCmd(cmdBuf); cmdLen = 0; }
     } else if (cmdLen < sizeof(cmdBuf) - 1) {

@@ -53,8 +53,8 @@ ASCII lines terminated by `\n`.
 | `AUTOCAL 0/1` | background gyro-bias learning while still (default on). Saved. |
 | `BIAS` | current gyro bias in 0.001 °/s, number of still-window updates since boot, still flag |
 
-## Background gyro-bias learning (fw 1.1)
-Every 0.5 s window is "still" when: gyro peak-to-peak < 1.5 °/s per axis, | |a| − 1 g | < 0.03 g, and the gravity
+## Background gyro-bias learning (fw 1.1, stillness test relaxed in 1.2.1)
+Every 0.5 s window is "still" when: gyro peak-to-peak < 1.5 °/s per axis, |a| varies < 0.03 g peak-to-peak (and is within 1 ± 0.15 g, since MPU-6050 scale is often a few % off), and the gravity
 direction turned < 0.1° since the previous window (so a slow tilt is never learned as bias; yaw can't be checked).
 After 4 still windows in a row (2 s) the `still` flag is set and each further window blends 25 % of its mean raw
 gyro into the bias (max 0.25 °/s per step, |bias| ≤ 8 °/s). The bias is saved to EEPROM once per boot and then at

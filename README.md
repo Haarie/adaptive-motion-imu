@@ -54,7 +54,7 @@ Keep pads 5–8 on both edges free of solder blobs: the lid ribs press on that p
 **With the Arduino IDE 2:** File → Preferences → Additional boards manager URLs:
 `https://raw.githubusercontent.com/dunknowcoding/ArduinoNRF/main/package_arduinonrf_index.json` →
 Boards Manager "ArduinoNRF" → Board **AliExpress ProMicro nRF52840** → Upload.
-Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.2.0 who=0x68 …`. LED: steady =
+Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.2.1 who=0x68 …`. LED: steady =
 sensor OK + host connected, slow blink = waiting for SimHub, fast blink = no sensor (check the four wires).
 
 ## Build the plugin (RYZEN-Racing)

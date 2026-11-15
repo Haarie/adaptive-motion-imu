@@ -54,7 +54,8 @@ static double g_noiseDps = 0.0;     // +/- uniform gyro noise
 static double rollNowDeg() { return 45.0 + g_rateDps * (g_us / 1e6); }
 static std::vector<uint8_t> g_rx;
 static size_t g_rxi = 0;
-static int16_t accRaw(double g) { return (int16_t)lround(g * 8192.0); }   // ±4 g
+static double g_accScale = 1.0;     // accelerometer scale error (real MPU-6050s: 0.95..1.05)
+static int16_t accRaw(double g) { return (int16_t)lround(g * g_accScale * 8192.0); }   // ±4 g
 struct FakeWire {
   void begin() {}
   void setClock(uint32_t) {}
@@ -86,7 +87,7 @@ struct FakeEEPROM {
 
 #include "../AdaptiveMotionIMU/AdaptiveMotionIMU.ino"
 
-// Scenario mode: ./host_test bias <bias_dps> <rate_dps> <seconds> -> prints learned bias (deg/s) and still flag
+// Scenario mode: ./host_test bias <bias_dps> <rate_dps> <seconds> [acc_scale] -> prints learned bias (deg/s) and still flag
 static int scenario(double bias, double rate, double secs) {
   g_biasDps = bias; g_rateDps = rate; g_noiseDps = 0.3;
   setup();
@@ -97,7 +98,7 @@ static int scenario(double bias, double rate, double secs) {
 }
 
 int main(int argc, char **argv) {
-  if (argc > 4 && !strcmp(argv[1], "bias")) return scenario(atof(argv[2]), atof(argv[3]), atof(argv[4]));
+  if (argc > 4 && !strcmp(argv[1], "bias")) { if (argc > 5) g_accScale = atof(argv[5]); return scenario(atof(argv[2]), atof(argv[3]), atof(argv[4])); }
   setup();
   // run until 3 IMU frames (type 0x01) were emitted
   int frames = 0;

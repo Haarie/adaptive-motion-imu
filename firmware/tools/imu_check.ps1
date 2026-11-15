@@ -26,7 +26,7 @@ $sp = New-Object System.IO.Ports.SerialPort $Port, 115200, ([System.IO.Ports.Par
 $sp.DtrEnable = $true; $sp.RtsEnable = $true; $sp.ReadTimeout = 50
 try { $sp.Open() } catch { Write-Host "Cannot open ${Port}: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Is another program (Arduino IDE serial monitor, SimHub) using it? Is it the right COM number?"; exit 1 }
-Start-Sleep -Milliseconds 300
+Start-Sleep -Milliseconds 800     # fw < 1.2.1 only notices an open port every 0.5 s
 $sp.DiscardInBuffer()
 $sp.Write("INFO`n"); Start-Sleep -Milliseconds 100; $sp.Write("BIAS`n")
 
