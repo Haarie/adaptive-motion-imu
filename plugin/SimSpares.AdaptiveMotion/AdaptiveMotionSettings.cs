@@ -21,7 +21,7 @@ namespace SimSpares.AdaptiveMotion
         // flange down / box above the slot (sensor +Y up), assuming the GY-521's X axis runs along the box.
         // On the rear face of the beam use NegZ. Auto-align replaces these with measured axes.
         public Axis MountForward = Axis.PosZ;    // which sensor axis points to the front of the rig
-        public Axis MountUp = Axis.PosY;         // which sensor axis points up
+        public Axis MountUp = Axis.PosX;         // which sensor axis points up (bench-measured: +X = away from the flange)
         public bool MountAuto = false;           // use the auto-aligned vectors below instead of MountForward/MountUp
         public double[] MountAutoForward = null; // rig forward in sensor coordinates (Auto-align)
         public double[] MountAutoUp = null;      // rig up in sensor coordinates (Auto-align)
