@@ -29,10 +29,76 @@ namespace SimSpares.AdaptiveMotion.IO
         public MotionPacketTransformer Transformer => _xf;
         public bool Running => _run;
 
+        // --- test override (verification): the plugin drives the rig itself --------------------------
+        private volatile Func<double[]> _override;
+        private Thread _injector;
+        private byte[] _template;                      // last raw SimHub motion packet (header/trailer bytes)
+        private readonly object _tplLock = new object(), _sendLock = new object();
+        public long Injected { get; private set; }
+        public bool Injecting => _override != null;
+        public bool HasTemplate { get { lock (_tplLock) return _template != null; } }
+
+        /// <summary>
+        /// Start sending the axis values returned by <paramref name="axes"/> every 10 ms instead of SimHub's
+        /// motion packets (SimHub's packets are dropped meanwhile; other packets still pass). A null return
+        /// skips that tick. Needs one motion packet from SimHub first (it supplies header/trailer bytes).
+        /// </summary>
+        public void BeginOverride(Func<double[]> axes)
+        {
+            if (!_run) throw new InvalidOperationException("proxy is not running");
+            if (!HasTemplate) throw new InvalidOperationException("no motion packet from SimHub yet: switch SimHub motion output on");
+            EndOverride();
+            _override = axes;
+            _injector = new Thread(Inject) { IsBackground = true, Name = "AdaptiveMotion.Test", Priority = ThreadPriority.Highest };
+            _injector.Start();
+            Log?.Invoke("Test mode: the plugin is driving the rig");
+        }
+
+        /// <summary>Hand the rig back to SimHub.</summary>
+        public void EndOverride()
+        {
+            bool was = _override != null;
+            _override = null;
+            var t = _injector;
+            if (t != null && t != Thread.CurrentThread) t.Join(500);
+            _injector = null;
+            if (was) Log?.Invoke("Test mode ended: SimHub drives the rig again");
+        }
+
+        private void Inject()
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long next = 0;
+            while (_run)
+            {
+                var f = _override;
+                if (f == null) break;
+                try
+                {
+                    var axes = f();
+                    if (axes != null)
+                    {
+                        byte[] pkt;
+                        lock (_tplLock) pkt = (byte[])_template.Clone();
+                        MotionPacketCodec.Encode(_xf.Layout, axes, pkt);
+                        lock (_sendLock) _tx.Send(pkt, pkt.Length, _target);
+                        Injected++;
+                        LastPacketSec = ImuSerialLink.NowSec;
+                    }
+                }
+                catch (ObjectDisposedException) { break; }
+                catch (Exception e) { Log?.Invoke("Test sender: " + e.Message); }
+                next += 10;
+                long wait = next - sw.ElapsedMilliseconds;
+                if (wait > 0) Thread.Sleep((int)wait); else next = sw.ElapsedMilliseconds;
+            }
+        }
+
         public void Start(int listenPort, string targetHost, int targetPort, MotionPacketTransformer xf,
                           Func<GainSnapshot> gains, Func<bool> active)
         {
             Stop();
+            lock (_tplLock) _template = null;
             _xf = xf; _gains = gains; _active = active;
             var addrs = Dns.GetHostAddresses(targetHost);
             IPAddress ip = null;
@@ -53,11 +119,13 @@ namespace SimSpares.AdaptiveMotion.IO
 
         public void Stop()
         {
+            _override = null;
             _run = false;
             try { _rx?.Close(); } catch { }
             try { _tx?.Close(); } catch { }
             _thread?.Join(1000);
-            _thread = null; _rx = null; _tx = null;
+            if (_injector != null && _injector != Thread.CurrentThread) _injector.Join(500);
+            _thread = null; _injector = null; _rx = null; _tx = null;
         }
 
         private void Loop()
@@ -72,8 +140,13 @@ namespace SimSpares.AdaptiveMotion.IO
                 var original = (byte[])p.Clone();
                 try
                 {
+                    if (MotionPacketCodec.IsMotionPacket(_xf.Layout, p, p.Length))
+                    {
+                        if (_override != null) continue;   // test mode: the plugin drives the rig, SimHub's packet is dropped
+                        lock (_tplLock) _template = original;
+                    }
                     bool motion = _xf.Process(p, p.Length, _gains(), _active());
-                    _tx.Send(p, p.Length, _target);
+                    lock (_sendLock) _tx.Send(p, p.Length, _target);
                     Forwarded++;
                     LastPacketSec = ImuSerialLink.NowSec;
                     if (motion)
@@ -85,7 +158,7 @@ namespace SimSpares.AdaptiveMotion.IO
                 catch (Exception e)
                 {
                     // Forward the original if the transform failed — never swallow motion silently
-                    try { _tx.Send(original, original.Length, _target); } catch { }
+                    try { lock (_sendLock) _tx.Send(original, original.Length, _target); } catch { }
                     Log?.Invoke("Proxy: " + e.Message);
                 }
             }

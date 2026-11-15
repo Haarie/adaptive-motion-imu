@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using SimSpares.AdaptiveMotion.Core;
 
 static class CoreTests
@@ -25,6 +26,8 @@ static class CoreTests
         ParkTests();
         VisualTests();
         AlignTests();
+        GeometryTests();
+        VerifyTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -445,5 +448,88 @@ static class CoreTests
         Check(!bad.Solve(out _, out _, out _, out var e2) && e2.Contains("at least"), "too small a nose-up tilt is refused");
         var moving = new MountAligner(); moving.BeginCapture(); for (int i = 0; i < 300; i++) moving.Add(0, 0, 1.4);
         Check(!moving.EndRest(out var e3) && e3.Contains("not still"), "capture while moving is refused");
+    }
+    static void GeometryTests()
+    {
+        var g = new RigGeometry { TrackMm = 660, WheelbaseMm = 500, StrokeMm = 225, MaxPitchDeg = 10, MaxRollDeg = 15 };
+        g.FillFromLayout(ActuatorLayout.FourCorner);
+        var pk = new PacketLayout { AxisCount = 4, MaxValue = 65535 };
+        Check(g.Problem(ActuatorLayout.FourCorner, pk) == null, "4-corner geometry complete: " + g.Problem(ActuatorLayout.FourCorner, pk));
+        // Haarie's rig: SimHub 15° roll -> left actuators 200 mm, right 25 mm around 112.5
+        var z = g.HeightsMm(0, 15);
+        Check(Near(z[0], 88.4, 0.2) && Near(z[1], -88.4, 0.2) && Near(z[2], 88.4, 0.2), $"15° roll on 660 mm track: {z[0]:F1}/{z[1]:F1} mm");
+        g.Pose(new[] { 87.5, -87.5, 87.5, -87.5 }, out var p0, out var r0, out var h0);
+        Check(Near(r0, 14.85, 0.02) && Near(p0, 0, 1e-6) && Near(h0, 0, 1e-6), $"175 mm difference over 660 mm = 14.85° roll ({r0:F2})");
+        g.Pose(g.HeightsMm(-4, 6, 12), out var p1, out var r1, out var h1);
+        Check(Near(p1, -4, 1e-6) && Near(r1, 6, 1e-6) && Near(h1, 12, 1e-6), "pose round trip with heave");
+        var neutral = new[] { 32767.5, 32767.5, 32767.5, 32767.5 };
+        var v = g.HeightsToValues(g.HeightsMm(3, -5), neutral, 65535);
+        g.Pose(g.ValuesToHeights(v, neutral, 65535), out var p2, out var r2, out _);
+        Check(Near(p2, 3, 0.01) && Near(r2, -5, 0.01), $"values round trip ({p2:F3}/{r2:F3})");
+        Check(Near(g.HeadroomMm(neutral, 65535), 112.5, 0.01), "headroom = half the stroke at mid-scale");
+        var g2 = new RigGeometry { TrackMm = 500, PivotOffsetMm = 400, StrokeMm = 100, MaxPitchDeg = 5, MaxRollDeg = 5 };
+        g2.FillFromLayout(ActuatorLayout.TwoLeftRight);
+        var z2 = g2.HeightsMm(5, 0);
+        Check(z2[0] < 0 && z2[1] < 0, "2-actuator seat mover: nose up = actuators behind the pivot go down");
+        g2.Pose(g2.HeightsMm(2, -3), out var p3, out var r3, out _);
+        Check(Near(p3, 2, 1e-6) && Near(r3, -3, 1e-6), "2-actuator pose round trip");
+        Check(new RigGeometry().Problem(ActuatorLayout.GlobalOnly, pk) != null, "missing layout is reported");
+    }
+
+    // Simulated rig: measured = scale * command (+ cross-talk), first-order lag
+    static VerificationRun SimRun(double pitchScale, double rollScale, double cross, double limitP = 10, double limitR = 15, double clipRoll = 99)
+    {
+        var run = new VerificationRun(limitP, limitR, new VerifyOptions { RampDps = 20, SettleSec = 0.3, MeasureSec = 0.2 });
+        double mp = 0, mr = 0, t = 0;
+        for (int i = 0; i < 20000 && !run.Done; i++)
+        {
+            t += 0.01;
+            double tp = run.CommandPitchDeg * pitchScale + run.CommandRollDeg * cross;
+            double tr = Math.Max(-clipRoll, Math.Min(clipRoll, run.CommandRollDeg * rollScale));
+            mp += (tp - mp) * 0.2; mr += (tr - mr) * 0.2;
+            run.Update(t, mp, mr);
+        }
+        return run;
+    }
+
+    static void VerifyTests()
+    {
+        var ok = SimRun(1.0, 0.98, 0);
+        Check(ok.Phase == VerifyPhase.Finished && ok.Overall == VerifyGrade.Pass, $"good rig passes ({ok.Phase} {ok.Overall})");
+        Check(ok.Steps.Count == 17 && ok.Steps.Any(s => Near(s.TargetDeg, -15, 1e-9)) && ok.Steps.All(s => Math.Abs(s.TargetDeg) <= 15), "poses are fractions of the SimHub limits");
+        Check(Near(ok.CommandPitchDeg, 0, 1e-9) && Near(ok.CommandRollDeg, 0, 1e-9), "run ends back at zero");
+        Check(Near(ok.Scale(VerifyAxis.Roll), 0.98, 0.01), "roll scale measured");
+
+        var half = SimRun(0.5, 0.5, 0);
+        Check(half.Overall == VerifyGrade.Fail && half.Findings().Any(f => f.Contains("factor of about 0.5") && f.Contains("ball-screw")), "factor 2 (ball-screw lead) is diagnosed: " + string.Join(" / ", half.Findings()));
+
+        var wrong = SimRun(1, -1, 0);
+        Check(wrong.Phase == VerifyPhase.Aborted && wrong.AbortReason.Contains("wrong way"), "reversed axis aborts the test: " + wrong.AbortReason);
+        Check(Near(wrong.CommandRollDeg, 0, 1e-9), "abort still ramps back to zero");
+
+        var dbl = SimRun(2.0, 1.0, 0);
+        Check(dbl.Phase == VerifyPhase.Aborted, "rig moving twice as far is stopped before it overshoots the limit: " + dbl.AbortReason);
+
+        var xt = SimRun(1, 1, 0.08);
+        Check(xt.Overall == VerifyGrade.Fail && xt.Findings().Any(f => f.Contains("influence each other")), "cross-talk is diagnosed");
+
+        var clip = SimRun(1, 1, 0, 10, 15, 13);
+        Check(clip.Findings().Any(f => f.Contains("not reachable") && f.Contains("13.0")), "unreachable limit is diagnosed: " + string.Join(" / ", clip.Findings()));
+
+        var g = new VerificationRun(10, 10, new VerifyOptions());
+        Check(g.GradeError(2, 0.25) == VerifyGrade.Pass && g.GradeError(2, 0.45) == VerifyGrade.Warn && g.GradeError(15, 0.7) == VerifyGrade.Pass && g.GradeError(15, 1.6) == VerifyGrade.Fail,
+              "tolerance = max(5 %, 0.3°) / warn max(10 %, 0.6°)");
+        var stop = new VerificationRun(10, 10, new VerifyOptions { RampDps = 10 });
+        for (int i = 1; i < 40; i++) stop.Update(i * 0.01, stop.CommandPitchDeg, stop.CommandRollDeg);
+        stop.RequestStop();
+        for (int i = 40; i < 400 && !stop.Done; i++) stop.Update(i * 0.01, stop.CommandPitchDeg, stop.CommandRollDeg);
+        Check(stop.Phase == VerifyPhase.Aborted && stop.AbortReason == "stopped by user" && stop.CommandPitchDeg == 0, "stop ramps home and ends");
+        var lost = new VerificationRun(10, 10, new VerifyOptions());
+        lost.Update(0, 0, 0); lost.Update(0.01, double.NaN, 0);
+        Check(lost.Phase == VerifyPhase.Aborted && lost.AbortReason == "no sensor data", "lost sensor ends the run (already at zero)");
+        var rep = VerificationReport.From(ok, "abc", "1.3.0", "fw");
+        Check(rep.Passed && rep.ValidFor("abc") && !rep.ValidFor("abd"), "report is tied to the settings fingerprint");
+        var geo = new RigGeometry { TrackMm = 660 }; var f1 = VerificationReport.Fingerprint(geo, 1.0); geo.TrackMm = 661;
+        Check(f1 != VerificationReport.Fingerprint(geo, 1.0), "fingerprint changes when the geometry changes");
     }
 }

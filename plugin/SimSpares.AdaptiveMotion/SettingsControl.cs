@@ -14,7 +14,7 @@ namespace SimSpares.AdaptiveMotion
     /// Settings page, built in code (no XAML) to keep the project to plain .cs files.
     /// Edits go into the plugin's Settings object; "Save &amp; apply" persists and restarts serial/proxy.
     /// </summary>
-    public class SettingsControl : UserControl
+    public partial class SettingsControl : UserControl
     {
         private readonly AdaptiveMotionPlugin _p;
         private readonly TextBlock _live = Mono();
@@ -136,7 +136,7 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Row("Trailer bytes after last axis", IntBox(pk.TrailerBytes, v => pk.TrailerBytes = v)));
             root.Children.Add(Row("Actuator layout", EnumBox(s.Actuators, v => s.Actuators = v)));
             root.Children.Add(Buttons(Btn("Capture neutral (motion on, game idle)", () => _p.StartNeutralCapture())));
-            root.Children.Add(Row("I verified the decoded axes move correctly", Check(s.LayoutVerified, v => s.LayoutVerified = v)));
+            root.Children.Add(new TextBlock { Text = "Gains are only applied after the Verify test has passed for these exact settings (Setup step 6).", TextWrapping = TextWrapping.Wrap, Opacity = 0.75 });
 
             root.Children.Add(Header("SimHub gain-event mode"));
             root.Children.Add(Row("One SimHub gain step (%)", Num(s.SimHubGainStepPct, v => s.SimHubGainStepPct = v)));
@@ -159,10 +159,17 @@ namespace SimSpares.AdaptiveMotion
             liveGrid.Children.Add(liveBar);
             liveGrid.Children.Add(new MotionVisualizer(_p));
 
-            var tabs = new TabControl();
-            tabs.Items.Add(new TabItem { Header = "Live view", Content = liveGrid });
-            tabs.Items.Add(new TabItem { Header = "Settings", Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            var tabs = _tabs = new TabControl();
+            bool firstRun = !s.SetupWizardSeen;
+            var liveTab = new TabItem { Header = "Live view", Content = liveGrid };
+            var setupTab = new TabItem { Header = "Setup", Content = BuildSetupTab() };
+            _verifyTab = new TabItem { Header = "Verify", Content = BuildVerifyTab() };
+            tabs.Items.Add(liveTab);
+            tabs.Items.Add(setupTab);
+            tabs.Items.Add(_verifyTab);
+            tabs.Items.Add(new TabItem { Header = "Advanced", Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
             tabs.Items.Add(new TabItem { Header = "Update", Content = BuildUpdateTab() });
+            tabs.SelectedItem = firstRun ? setupTab : liveTab;
             Content = tabs;
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -200,6 +207,7 @@ namespace SimSpares.AdaptiveMotion
                 _p.Park.MountShifted ? "MOUNT SHIFTED" : "");
             _msg.Text = _p.LastMessage;
             RefreshUpdateTab();
+            RefreshSetupAndVerify();
 
             var lg = _p.Logger;
             string lbl = lg.Active ? "Stop log" : "Start log";

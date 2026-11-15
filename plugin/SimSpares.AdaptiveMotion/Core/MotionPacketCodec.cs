@@ -71,6 +71,7 @@ namespace SimSpares.AdaptiveMotion.Core
             _neutral = neutral != null && neutral.Length == layout.AxisCount ? (double[])neutral.Clone() : DefaultNeutral(layout);
         }
 
+        public PacketLayout Layout => _l;
         public double[] LastAxes => (double[])_axes.Clone();
         public double[] Neutral => (double[])_neutral.Clone();
         public double PitchMode => _scaler.LastPitchMode / (_l.MaxValue / 2.0);   // fraction of half range

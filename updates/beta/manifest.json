@@ -1,0 +1,24 @@
+{
+  "schema": 2,
+  "tag": "v1.3.0",
+  "name": "Adaptive Motion (IMU) 1.3.0",
+  "released": "2026-11-15",
+  "plugin": {
+    "version": "1.3.0",
+    "simhub_min": "9.0",
+    "file": "SimSpares.AdaptiveMotion.dll",
+    "url": "1.3.0/SimSpares.AdaptiveMotion.dll",
+    "size": 183296,
+    "sha256": "44762ade55b08e95ec6244a3e6be56852c1607c6dea4457d1585c6d44e54cd6e"
+  },
+  "firmware": {
+    "version": "1.3.1",
+    "board": "nRF52840",
+    "softdevice": "S140 version 6.1.1",
+    "file": "AdaptiveMotionIMU_promicro_nrf52840.uf2",
+    "url": "1.3.0/AdaptiveMotionIMU_promicro_nrf52840.uf2",
+    "size": 169472,
+    "sha256": "abd9a5a46fb890e776495d739f528daa3307bc66c068de7a9f5213be41251e1b"
+  },
+  "notes": "## Adaptive Motion (IMU) 1.3.0 (beta)\n\n**New: Setup tab.** Seven steps from connecting the box to closed loop, each with a green tick when done. The old settings page is now the **Advanced** tab.\n\n**New: Verify tab.** The plugin moves the rig through \u00bc, \u00bd, \u00be and full pitch and roll of your SimHub limits, waits for it to settle and compares every pose with what the IMU measures on the seat.\n- Green within max(5 %, 0.3\u00b0), amber within max(10 %, 0.6\u00b0), red outside; cross-talk (the other axis) must stay within 0.5\u00b0.\n- Plain-language findings: factor-2 errors (ball-screw lead / stroke), reversed axes, misaligned mounting, unreachable limits, zero offset.\n- Report saved to Documents\\Adaptive Motion IMU\\verification (.txt + .csv).\n- The first run goes to half of your limits (Largest pose 50 %); set 100 % once that passes, which also checks that the limits are reachable.\n- Safety: only with the game closed, slow ramps, Stop returns the rig to centre, the test aborts when the seat moves the wrong way or past the limit, or when the sensor drops out.\n\n**Closed loop is now locked** until a passed verification exists for exactly the current settings (rig dimensions, limits, mounting, level, neutral, packet layout, controller address). Change any of them and the test has to be run again.\n\nAlso: commanded pitch/roll in degrees as properties (Command.PitchDeg/RollDeg) and in the log (cmd_pitch_deg, cmd_roll_deg); actions VerifyStart/VerifyStop; properties Verify.Valid/Running/Result.\n\nBefore the first test: check that your controller parks the rig when UDP packets stop (comms-loss timeout).\n"
+}

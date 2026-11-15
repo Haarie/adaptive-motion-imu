@@ -57,6 +57,13 @@ namespace SimSpares.AdaptiveMotion
         private bool _alignIsRest;
         // SimHub gain-event mode
         private int _gainStepsDown; private double _lastStepSec;
+        // verification (test mode)
+        internal readonly object VerifyLock = new object();
+        private VerificationRun _verifyRun;            // running test (null when idle)
+        private VerificationRun _lastRun;              // last finished/aborted test, for the Verify tab
+        private volatile bool _verifyDone;
+        private double[] _verifyNeutral;
+        private string _fingerprint; private double _fingerprintSec = double.NaN;
 
         public PlatformState State { get { lock (_stateLock) return _state; } }
         public double FrameRate => _frameRate;
@@ -145,7 +152,182 @@ namespace SimSpares.AdaptiveMotion
 
         /// <summary>Gains are applied to UDP packets only when every precondition holds.</summary>
         public bool ProxyActive => Settings.Mode == ApplyMode.UdpProxy && Settings.AdaptiveEnabled
-                                   && Settings.LayoutVerified && Settings.LevelCaptured;
+                                   && Settings.LevelCaptured && VerificationValid && !Verifying;
+
+        // ======================================================================================
+        // Verification (static test: commanded pose vs measured seat attitude)
+        // ======================================================================================
+        /// <summary>Everything that changes how SimHub's numbers become seat motion. A change invalidates the report.</summary>
+        public string Fingerprint
+        {
+            get
+            {
+                double now = ImuSerialLink.NowSec;
+                if (_fingerprint == null || double.IsNaN(_fingerprintSec) || now - _fingerprintSec > 1.0)
+                {
+                    var s = Settings;
+                    _fingerprint = VerificationReport.Fingerprint(s.Rig, s.Actuators, s.Packet, s.Neutral, s.MountForward, s.MountUp, s.MountAuto,
+                        s.MountAutoForward, s.MountAutoUp, s.LevelCaptured, s.LevelPitchDeg, s.LevelRollDeg, s.ProxyTargetHost, s.ProxyTargetPort);
+                    _fingerprintSec = now;
+                }
+                return _fingerprint;
+            }
+        }
+
+        /// <summary>True while a passed verification exists for exactly the current settings.</summary>
+        public bool VerificationValid => Settings.LastVerification != null && Settings.LastVerification.ValidFor(Fingerprint);
+        public bool Verifying { get { lock (VerifyLock) return _verifyRun != null; } }
+        public VerificationRun RunForDisplay { get { lock (VerifyLock) return _verifyRun ?? _lastRun; } }
+
+        /// <summary>Why the test cannot start right now (empty list = ready).</summary>
+        public System.Collections.Generic.List<string> VerifyBlockers()
+        {
+            var b = new System.Collections.Generic.List<string>();
+            var s = Settings;
+            if (!SensorFresh) b.Add("the IMU box is not sending data");
+            if (!s.LevelCaptured) b.Add("capture the level first (rig parked at its centre)");
+            string geo = s.Rig.Problem(s.Actuators, s.Packet);
+            if (geo != null) b.Add(geo);
+            if (s.Mode != ApplyMode.UdpProxy) b.Add("set the mode to UDP proxy (the test drives the rig through the proxy)");
+            else if (!Proxy.Running) b.Add("the UDP proxy is not running: check the controller host/port and Save & apply");
+            else if (!Proxy.HasTemplate || double.IsNaN(Proxy.LastPacketSec) || ImuSerialLink.NowSec - Proxy.LastPacketSec > 2)
+                b.Add("no motion packets from SimHub: point SimHub's output at 127.0.0.1:" + s.ProxyListenPort + " and switch motion on");
+            if (s.Neutral == null) b.Add("capture the actuator neutral (motion on, game idle)");
+            if (_gameRunning) b.Add("stop the game: the test only runs with the game closed or idle in the menu");
+            if (geo == null && s.Neutral != null && s.Neutral.Length >= s.Rig.Count)
+            {
+                double need = 0, frac = Math.Min(1, s.Verify.MaxFractionPct / 100);
+                foreach (var z in s.Rig.HeightsMm(s.Rig.MaxPitchDeg * frac, 0)) need = Math.Max(need, Math.Abs(z));
+                foreach (var z in s.Rig.HeightsMm(0, s.Rig.MaxRollDeg * frac)) need = Math.Max(need, Math.Abs(z));
+                double room = s.Rig.HeadroomMm(s.Neutral, s.Packet.MaxValue);
+                if (need > room * 0.98)
+                    b.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "the largest test pose needs {0:F0} mm of stroke but only {1:F0} mm is left around neutral: check the stroke and limits", need, room));
+            }
+            return b;
+        }
+
+        public bool StartVerification(out string why)
+        {
+            var blockers = VerifyBlockers();
+            if (blockers.Count > 0) { why = string.Join("; ", blockers); return false; }
+            try
+            {
+                lock (VerifyLock)
+                {
+                    if (_verifyRun != null) { why = "a test is already running"; return false; }
+                    _verifyNeutral = (double[])Settings.Neutral.Clone();
+                    _verifyRun = new VerificationRun(Settings.Rig.MaxPitchDeg, Settings.Rig.MaxRollDeg, Settings.Verify.Clone());
+                    _verifyDone = false;
+                }
+                Proxy.BeginOverride(VerifyTick);
+                LogEvent("VERIFY START");
+                Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "Verification started: pitch up to ±{0:F1}°, roll up to ±{1:F1}°. Stay clear of the rig; Stop parks it.",
+                    Settings.Rig.MaxPitchDeg * Math.Min(1, Settings.Verify.MaxFractionPct / 100), Settings.Rig.MaxRollDeg * Math.Min(1, Settings.Verify.MaxFractionPct / 100)));
+                why = null;
+                return true;
+            }
+            catch (Exception e)
+            {
+                lock (VerifyLock) _verifyRun = null;
+                why = e.Message;
+                return false;
+            }
+        }
+
+        public void StopVerification(string reason = "stopped by user")
+        {
+            lock (VerifyLock) _verifyRun?.RequestStop(reason);
+        }
+
+        // Called by the proxy's test sender every 10 ms: advance the run and return the actuator values to send.
+        private double[] VerifyTick()
+        {
+            lock (VerifyLock)
+            {
+                var run = _verifyRun;
+                if (run == null) return null;
+                var st = State;
+                bool fresh = SensorFresh;
+                run.Update(ImuSerialLink.NowSec, fresh ? st.PitchDeg : double.NaN, fresh ? st.RollDeg : double.NaN);
+                if (run.Done) _verifyDone = true;
+                var rig = Settings.Rig;
+                return rig.HeightsToValues(rig.HeightsMm(run.CommandPitchDeg, run.CommandRollDeg), _verifyNeutral, Settings.Packet.MaxValue);
+            }
+        }
+
+        // SimHub thread: finish a run (report, files) once the rig is back at zero
+        private void FinishVerificationIfDone()
+        {
+            if (!_verifyDone) return;
+            VerificationRun run;
+            lock (VerifyLock) { run = _verifyRun; _verifyRun = null; _lastRun = run; _verifyDone = false; }
+            Proxy.EndOverride();
+            if (run == null) return;
+            var rep = VerificationReport.From(run, Fingerprint, UpdateService.InstalledPluginVersion.ToString(3), _deviceInfo);
+            Settings.LastVerification = rep;
+            SaveSettings();
+            string file = SaveVerificationFiles(run, rep);
+            LogEvent("VERIFY " + rep.Overall.ToUpperInvariant());
+            Note("Verification " + (rep.Passed ? "PASSED" : rep.Overall.ToUpperInvariant()) + ": " + string.Join(" ", rep.Findings) + (file != null ? "  Report: " + file : ""));
+        }
+
+        private string SaveVerificationFiles(VerificationRun run, VerificationReport rep)
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Adaptive Motion IMU", "verification");
+                System.IO.Directory.CreateDirectory(dir);
+                string stem = System.IO.Path.Combine(dir, "verify_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture));
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                var r = Settings.Rig;
+                var txt = new System.Text.StringBuilder();
+                txt.AppendLine("Adaptive Motion IMU - rig verification");
+                txt.AppendLine("date      " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", inv));
+                txt.AppendLine("result    " + (rep.Passed ? "PASSED" : rep.Overall));
+                txt.AppendLine("plugin    " + rep.Plugin + "   device " + rep.Firmware);
+                txt.AppendLine(string.Format(inv, "limits    pitch ±{0:F1}°  roll ±{1:F1}°   tolerance max({2} %, {3}°)", rep.LimitPitchDeg, rep.LimitRollDeg, run.Options.TolPct, run.Options.TolMinDeg));
+                txt.AppendLine(string.Format(inv, "rig       layout {0}, stroke {1} mm, track {2} mm, wheelbase {3} mm", Settings.Actuators, r.StrokeMm, r.TrackMm, r.WheelbaseMm));
+                txt.AppendLine(string.Format(inv, "scale     pitch {0:F3}  roll {1:F3}   max cross-talk {2:F2}°   zero {3:F2}/{4:F2}°", rep.PitchScale, rep.RollScale, rep.MaxCrossTalkDeg, rep.ZeroPitchDeg, rep.ZeroRollDeg));
+                txt.AppendLine("settings  " + rep.SettingsHash);
+                txt.AppendLine();
+                foreach (var f in rep.Findings) txt.AppendLine("- " + f);
+                System.IO.File.WriteAllText(stem + ".txt", txt.ToString());
+                System.IO.File.WriteAllText(stem + ".csv", run.Csv());
+                return stem + ".txt";
+            }
+            catch (Exception e) { Note("Could not save the verification report: " + e.Message); return null; }
+        }
+
+        /// <summary>What SimHub currently commands, in degrees (NaN when the geometry or packets are missing).</summary>
+        public void CommandedPose(out double pitchDeg, out double rollDeg)
+        {
+            pitchDeg = rollDeg = double.NaN;
+            lock (VerifyLock)
+                if (_verifyRun != null) { pitchDeg = _verifyRun.CommandPitchDeg; rollDeg = _verifyRun.CommandRollDeg; return; }
+            var xf = Proxy.Transformer;
+            var s = Settings;
+            if (xf == null || !Proxy.Running || xf.MotionPackets == 0 || s.Rig.Problem(s.Actuators, s.Packet) != null) return;
+            try
+            {
+                var neutral = s.Neutral ?? MotionPacketTransformer.DefaultNeutral(s.Packet);
+                s.Rig.Pose(s.Rig.ValuesToHeights(xf.LastAxes, neutral, s.Packet.MaxValue), out pitchDeg, out rollDeg, out _);
+            }
+            catch { pitchDeg = rollDeg = double.NaN; }
+        }
+
+        /// <summary>Copy the SimHub limits into the plugin's own envelope (gain reduction starts there, trips a bit beyond).</summary>
+        public void ApplyRigLimitsToController()
+        {
+            var r = Settings.Rig; var c = Settings.Controller;
+            if (!(r.MaxPitchDeg > 0) || !(r.MaxRollDeg > 0)) { Note("Enter the SimHub pitch and roll limits first"); return; }
+            c.PitchLimitDeg = r.MaxPitchDeg; c.RollLimitDeg = r.MaxRollDeg;
+            c.PitchHardDeg = Math.Round(r.MaxPitchDeg * 1.2 + 1, 1); c.RollHardDeg = Math.Round(r.MaxRollDeg * 1.2 + 1, 1);
+            Controller.UpdateSettings(c);
+            SaveSettings();
+            Note(string.Format(System.Globalization.CultureInfo.InvariantCulture, "Plugin limits set from SimHub: pitch {0}°, roll {1}° (hard trip {2}° / {3}°)", c.PitchLimitDeg, c.RollLimitDeg, c.PitchHardDeg, c.RollHardDeg));
+        }
 
         // ======================================================================================
         // IMU thread
@@ -222,6 +404,9 @@ namespace SimSpares.AdaptiveMotion
             _gameRunning = data.GameRunning;
             Controller.Tick(now);
             ReadGameData(data);
+            if (_gameRunning && Verifying) StopVerification("a game started");
+            if (Verifying && !Proxy.Running) { lock (VerifyLock) { _lastRun = _verifyRun; _verifyRun = null; } Note("Verification stopped: the proxy stopped"); }
+            FinishVerificationIfDone();
             if (Settings.LogAutoStart)
             {
                 if (_gameRunning && !wasRunning && !Logger.Active) { StartLog(); _autoLogging = true; }
@@ -241,7 +426,7 @@ namespace SimSpares.AdaptiveMotion
                 else Note("Neutral capture failed: no motion packets received");
             }
 
-            if (Settings.Mode == ApplyMode.SimHubGainEvents && Settings.AdaptiveEnabled && Settings.LevelCaptured)
+            if (Settings.Mode == ApplyMode.SimHubGainEvents && Settings.AdaptiveEnabled && Settings.LevelCaptured && VerificationValid)
                 StepSimHubGain(now);
         }
 
@@ -260,6 +445,8 @@ namespace SimSpares.AdaptiveMotion
 
         public void End(PluginManager pluginManager)
         {
+            lock (VerifyLock) _verifyRun = null;
+            Proxy.EndOverride();
             Logger.Stop();
             Proxy.Stop();
             Imu.Stop();
@@ -295,7 +482,12 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Gain.Heave", () => Math.Round(Controller.Snapshot.Heave, 3));
             this.AttachDelegate("Status", () => Controller.Snapshot.Status == ControllerStatus.WaitingForSensor && SensorFresh && !Settings.LevelCaptured
                 ? "NeedsLevel" : Controller.Snapshot.Status.ToString());
-            this.AttachDelegate("Applying", () => ProxyActive || (Settings.Mode == ApplyMode.SimHubGainEvents && Settings.AdaptiveEnabled));
+            this.AttachDelegate("Applying", () => ProxyActive || (Settings.Mode == ApplyMode.SimHubGainEvents && Settings.AdaptiveEnabled && VerificationValid));
+            this.AttachDelegate("Verify.Valid", () => VerificationValid);
+            this.AttachDelegate("Verify.Running", () => Verifying);
+            this.AttachDelegate("Verify.Result", () => Settings.LastVerification?.Overall ?? "");
+            this.AttachDelegate("Command.PitchDeg", () => { CommandedPose(out var p, out _); return double.IsNaN(p) ? 0 : Math.Round(p, 2); });
+            this.AttachDelegate("Command.RollDeg", () => { CommandedPose(out _, out var r); return double.IsNaN(r) ? 0 : Math.Round(r, 2); });
             this.AttachDelegate("Tripped", () => Controller.Tripped);
             this.AttachDelegate("ImpactCount", () => Controller.ImpactCount);
             this.AttachDelegate("Level.Pitch", () => Math.Round(Controller.LevelPitch, 2));
@@ -351,6 +543,8 @@ namespace SimSpares.AdaptiveMotion
             this.AddAction("ShowGyroBias", (a, b) => Imu.Send("BIAS"));
             this.AddAction("LogStart", (a, b) => StartLog());
             this.AddAction("LogStop", (a, b) => { StopLog(); _autoLogging = false; });
+            this.AddAction("VerifyStart", (a, b) => { if (!StartVerification(out var why)) Note("Verification cannot start: " + why); });
+            this.AddAction("VerifyStop", (a, b) => StopVerification());
             this.AddAction("LogToggle", (a, b) => { if (Logger.Active) { StopLog(); _autoLogging = false; } else StartLog(); });
         }
 
@@ -421,7 +615,7 @@ namespace SimSpares.AdaptiveMotion
             "cue_surge_g", "cue_sway_g", "cue_heave_g", "lin_surge_g", "lin_sway_g", "lin_heave_g",
             "peak_g", "vib_rms_g", "flags", "gain_global", "gain_pitch", "gain_roll", "gain_heave", "status",
             "level_global", "level_pitch", "level_roll", "level_heave", "applying", "cmd_pitch", "cmd_roll",
-            "game_running", "speed_kmh", "gear", "rpm", "game_accel_surge", "game_accel_sway", "game_accel_heave", "event"
+            "cmd_pitch_deg", "cmd_roll_deg", "game_running", "speed_kmh", "gear", "rpm", "game_accel_surge", "game_accel_sway", "game_accel_heave", "event"
         };
 
         public void StartLog()
@@ -476,6 +670,7 @@ namespace SimSpares.AdaptiveMotion
             n(Controller.LevelGlobal, "F3"); n(Controller.LevelPitch, "F3"); n(Controller.LevelRoll, "F3"); n(Controller.LevelHeave, "F3");
             sb.Append(ProxyActive ? 1 : 0).Append(',');
             n(_cmdPitch, "F3"); n(_cmdRoll, "F3");
+            CommandedPose(out var cp, out var cr); n(cp, "F3"); n(cr, "F3");
             sb.Append(_gameRunning ? 1 : 0).Append(',');
             if (Settings.LogGameData && _gameRunning)
             {

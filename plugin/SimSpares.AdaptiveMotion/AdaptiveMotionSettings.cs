@@ -50,7 +50,13 @@ namespace SimSpares.AdaptiveMotion
         public PacketLayout Packet = new PacketLayout();
         public ActuatorLayout Actuators = ActuatorLayout.GlobalOnly;
         public double[] Neutral = null;          // captured rest values; null = mid-scale
-        public bool LayoutVerified = false;      // gains are only applied once you tick this
+        public bool LayoutVerified = false;      // (pre-1.3) manual tick; closed loop now needs a passed verification
+
+        // --- rig + verification (1.3) -------------------------------------------------------
+        public RigGeometry Rig = new RigGeometry();          // dimensions + limits, as entered in SimHub's motion settings
+        public VerifyOptions Verify = new VerifyOptions { MaxFractionPct = 50 };   // first runs at half the limits; set 100 % once it looks right
+        public VerificationReport LastVerification = null;   // closed loop only while this passed and still matches the settings
+        public bool SetupWizardSeen = false;
 
         // --- SimHub gain-event mode ---------------------------------------------------------
         public double SimHubGainStepPct = 5.0;   // must match one step of SimHub's gain control
