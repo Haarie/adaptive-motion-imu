@@ -67,7 +67,7 @@ bpy.ops.mesh.primitive_plane_add(size=3.0, location=(0, 0.0, -0.075))
 floor = bpy.context.object; floor.name = "floor"
 bpy.ops.mesh.primitive_plane_add(size=2.0, location=(0, 0.16, 0.9), rotation=(math.radians(90), 0, 0))
 wall = bpy.context.object; wall.name = "wall"
-bg = material("Backdrop", "#8E9390", rough=0.9)
+bg = material("Backdrop", os.environ.get("BACKDROP", "#8E9390"), rough=0.9)
 floor.data.materials.append(bg); wall.data.materials.append(bg)
 
 def area(name, loc, target, power, size, col=(1, 1, 1)):
@@ -90,6 +90,7 @@ w.node_tree.nodes["Background"].inputs[0].default_value = (0.55, 0.57, 0.6, 1); 
 cams = {   # view: (camera location, lens mm, look-at target)
     "front": ((0.135, -0.255, 0.105), 56, T),
     "close": ((0.105, -0.165, -0.030), 60, (0.0, -0.010, 0.006)),
+    "kit":   ((0.000, -0.205, 0.120), 50, (0.0, -0.008, -0.075)),
 }
 loc, lens, T = cams.get(VIEW, cams["front"])
 bpy.ops.object.camera_add(location=loc)
