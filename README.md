@@ -86,6 +86,15 @@ One file per session, `AMIMU_<date>_<time>_<game>_<car>_<track>.csv`, `#` header
 then one row per sample (tilt, rates, cue, gains, status, limit usage, commands, game data) and event rows
 (TRIP, IMPACT, messages). Written on a background thread: the IMU loop never waits for the disk.
 
+## Updates
+SimHub → Adaptive Motion → **Update** tab: installed vs latest plugin and firmware, release notes, *Download and install*
+(UAC prompt, SimHub closes, the DLL is swapped by a helper and SimHub restarts; previous DLL kept for *Roll back*) and
+*Update firmware* (box → UF2 bootloader via `BOOTLOADER`, fw ≥ 1.3.1; older: double-tap RST; copy, reconnect, verify).
+Channel: `updates/stable/manifest.json` (beta: `updates/beta/`) on `main` of this public repo, read from
+raw.githubusercontent.com; files are SHA-256 checked. Publish: `NET48=… SIMHUB=… tools/make_release.sh <ver> notes.md`,
+then commit + push `updates/`. `plugin/tools/build_release.sh` compiles the DLL against the real SimHub and .NET 4.8
+reference assemblies with Mono (no Windows needed).
+
 ## Mounting
 Default `mount_style = "side"`: the box lies along a horizontal 30/40-series slot-8 cross-member, bolted to
 its vertical side face; a 6 mm flange along the box's long side carries two M6 bolts 32 mm apart (±3 mm play),

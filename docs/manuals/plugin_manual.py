@@ -29,6 +29,7 @@ body = [H1("Contents"), toc_block([
     ("Commissioning on the rig", "level, park pose, monitor laps, limits"),
     ("Applying gains", "UDP proxy step by step, or SimHub gain events"),
     ("Data logging", "record sessions to CSV in a folder of your choice"),
+    ("Updates", "plugin and firmware updates from the Update tab"),
     ("Dashboards and controls", "properties, actions, events"),
     ("Troubleshooting", "common problems"),
     ("Safety", "what the plugin is and is not"),
@@ -239,8 +240,33 @@ body += [PageBreak(), H1("8  Data logging"),
             "share the CSV and the peaks per corner can be read straight from it."),
 ]
 
-# 9 dashboards
-body += [PageBreak(), H1("9  Dashboards and controls"),
+# 9 updates
+body += [PageBreak(), H1("9  Updates"),
+    P("The <b>Update</b> tab (next to Live view and Settings) shows the installed and latest versions of the plugin and of the "
+      "box's firmware, and installs both. Updates come from the project's public GitHub repository "
+      "(<font name='Mono'>updates/stable/manifest.json</font>); every file is checked against its SHA-256 checksum before it is used."),
+    table([["Item", "What it shows / does"],
+           ["Installed / Latest version", "Plugin version running now, and the newest one offered. 'update available' when newer."],
+           ["Check for updates", "Asks GitHub for the latest versions (also automatic 15 s after SimHub starts, if enabled)."],
+           ["Download and install", "Downloads and verifies the new plugin, asks once for administrator permission, then offers "
+            "<b>Close SimHub now</b>. SimHub closes, the plugin file is replaced and SimHub starts again by itself."],
+           ["Roll back to previous version", "Puts the plugin file from before the last update back (same restart)."],
+           ["Box firmware / Latest firmware", "Version reported by the box (INFO) and the newest firmware."],
+           ["Update firmware", "Rig parked and still. The box restarts into update mode (firmware 1.3.1 and newer; older: "
+            "double-tap RST to GND when asked), the plugin copies the new firmware, waits for the box to come back and "
+            "confirms the new version. Calibration is kept."],
+           ["Release notes", "What changed in the latest version."],
+           ["Options", "Repository (owner/name), check on start, beta channel (test versions)."]],
+          [0.3, 0.7]),
+    callout("note", "Good to know", ["A live view badge <b>UPDATE</b> appears when a newer plugin or firmware is available. "
+            "Properties <font name='Mono'>Update.Available</font> and <font name='Mono'>Update.FirmwareAvailable</font> can drive a dash alert.",
+            "The installer log is kept in <font name='Mono'>%LOCALAPPDATA%\\SimSpares\\AdaptiveMotion\\updates\\install_plugin.log</font>."]),
+    callout("warn", "Firmware updates", "Never unplug the box while the NICENANO drive is visible. If an update is interrupted, "
+            "double-tap RST to GND and press Update firmware again: the bootloader itself is never touched."),
+]
+
+# 10 dashboards
+body += [PageBreak(), H1("10  Dashboards and controls"),
     P("All values are SimHub properties under <font name='Mono'>AdaptiveMotionPlugin.</font> and can be used in Dash Studio, "
       "ShakeIt, LED profiles and NCalc formulas."),
     table([["Property", "Meaning"],
@@ -257,7 +283,9 @@ body += [PageBreak(), H1("9  Dashboards and controls"),
            ["Park.State / ReferenceLearned / DeviationDeg / MountShifted", "Park check"],
            ["Proxy.Active / Proxy.Forwarded", "Proxy applying, packets forwarded"],
            ["Mount.Auto / LastMessage", "Auto-align in use, last message from the plugin"],
-           ["Log.Active / Log.File / Log.Rows / Log.Seconds", "Recording state, file, rows written, duration"]],
+           ["Log.Active / Log.File / Log.Rows / Log.Seconds", "Recording state, file, rows written, duration"],
+           ["Update.InstalledVersion / LatestVersion / Available", "Plugin update state"],
+           ["Update.FirmwareInstalled / FirmwareLatest / FirmwareAvailable", "Firmware update state"]],
           [0.5, 0.5], mono_cols=(0,)),
     H2("Actions (Controls and events)"),
     table([["Action", "Does"],
@@ -280,7 +308,7 @@ body += [PageBreak(), H1("9  Dashboards and controls"),
 ]
 
 # 9 troubleshooting + 10 safety
-body += [PageBreak(), H1("10  Troubleshooting"),
+body += [PageBreak(), H1("11  Troubleshooting"),
     table([["Symptom", "Cause / fix"],
            ["Plugin not in the left menu", "SimHub didn't load it: re-run install.ps1 with SimHub closed, then accept 'enable plugin' at start-up."],
            ["Build fails", "Copy the errors from the PowerShell window. Check dotnet --list-sdks shows an SDK; the first build needs internet (NuGet)."],
@@ -294,9 +322,11 @@ body += [PageBreak(), H1("10  Troubleshooting"),
            ["Header never shows APPLYING", "All four needed: Mode UdpProxy, Adaptive enabled, level captured, axes verified."],
            ["Rig doesn't move in proxy mode", "SimHub's output not pointed at 127.0.0.1:33740, or controller host/port wrong. Proxy.Forwarded should count up."],
            ["SENSORLOST", "No frames for a moment: USB cable or hub. Use a direct port and a shielded cable away from motor wiring."],
-           ["Log start failed", "Folder not writable (e.g. inside Program Files) or disk full: pick another folder with Browse…."]],
+           ["Log start failed", "Folder not writable (e.g. inside Program Files) or disk full: pick another folder with Browse…."],
+           ["Update check failed: no update channel found", "The repository is private or nothing is published yet."],
+           ["Update: administrator permission was refused", "The plugin lives in the SimHub folder: accept the Windows prompt, or run install.ps1."]],
           [0.33, 0.67]),
-    H1("11  Safety"),
+    H1("12  Safety"),
     callout("warn", "This is not a safety system", [
         "The plugin only ever <b>attenuates</b>: gains stay between the minimum gain and 1.0, and it never moves an actuator further from "
         "neutral than SimHub's own packet did.",
@@ -305,6 +335,6 @@ body += [PageBreak(), H1("10  Troubleshooting"),
 ]
 
 doc = ManualDoc(OUT, "Adaptive Motion IMU\nSimHub Plugin", "Install, live view, settings, commissioning",
-                "Plugin manual v1.1 · plugin 1.1 · firmware 1.3.0 · November 2026", "Sim racing motion · closed loop")
+                "Plugin manual v1.2 · plugin 1.2 · firmware 1.3.1 · November 2026", "Sim racing motion · closed loop")
 doc.build(story + start(body))
 print("wrote", OUT)

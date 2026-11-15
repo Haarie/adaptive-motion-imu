@@ -278,7 +278,7 @@ namespace SimSpares.AdaptiveMotion
             var repo = Txt(s.UpdateRepo, v => s.UpdateRepo = v); repo.Width = 280;
             r.Children.Add(Row("GitHub repository (owner/name)", repo));
             r.Children.Add(Row("Check for updates when SimHub starts", Check(s.UpdateCheckOnStart, v => { s.UpdateCheckOnStart = v; _p.SaveSettings(); })));
-            r.Children.Add(Row("Include pre-releases (test versions)", Check(s.UpdateIncludePrerelease, v => { s.UpdateIncludePrerelease = v; _p.SaveSettings(); })));
+            r.Children.Add(Row("Beta channel (test versions)", Check(s.UpdateIncludePrerelease, v => { s.UpdateIncludePrerelease = v; _p.SaveSettings(); })));
             return new ScrollViewer { Content = r, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         }
 

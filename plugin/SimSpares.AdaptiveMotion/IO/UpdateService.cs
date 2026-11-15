@@ -32,9 +32,9 @@ namespace SimSpares.AdaptiveMotion.IO
     }
 
     /// <summary>
-    /// Update checks against GitHub Releases of a public repository.
-    /// A release carries manifest.json + SimSpares.AdaptiveMotion.dll + the firmware .uf2;
-    /// every download is checked against the SHA-256 in the manifest before it is used.
+    /// Update checks against an update channel in a public GitHub repository:
+    /// updates/stable/manifest.json (or updates/beta/) on the main branch, pointing at the plugin DLL and the
+    /// firmware .uf2 stored next to it. Every download is checked against the SHA-256 in the manifest.
     /// </summary>
     public sealed class UpdateService
     {
@@ -77,11 +77,14 @@ namespace SimSpares.AdaptiveMotion.IO
         {
             var wc = new WebClient();
             wc.Headers[HttpRequestHeader.UserAgent] = "SimSpares-AdaptiveMotion/" + InstalledPluginVersion;
-            wc.Headers[HttpRequestHeader.Accept] = "application/vnd.github+json";
             return wc;
         }
 
         // ------------------------------------------------------------------ check
+        /// <summary>Update channel: updates/&lt;channel&gt;/manifest.json on the repository's main branch.</summary>
+        public static string ManifestUrl(string repo, bool beta) =>
+            "https://raw.githubusercontent.com/" + repo.Trim().Trim('/') + "/main/updates/" + (beta ? "beta" : "stable") + "/manifest.json";
+
         public Task<ReleaseInfo> CheckAsync(string repo, bool includePrerelease)
         {
             return Task.Run(() =>
@@ -89,38 +92,29 @@ namespace SimSpares.AdaptiveMotion.IO
                 Busy = true;
                 try
                 {
-                    Say("Checking " + repo + " …");
+                    string url = ManifestUrl(repo, includePrerelease);
+                    Say("Checking " + repo + (includePrerelease ? " (beta channel)" : "") + " …");
                     var js = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 };
-                    Dictionary<string, object> rel;
+                    Dictionary<string, object> man;
                     using (var wc = Client())
                     {
-                        if (includePrerelease)
-                        {
-                            var list = js.Deserialize<List<Dictionary<string, object>>>(wc.DownloadString("https://api.github.com/repos/" + repo + "/releases?per_page=10"));
-                            rel = list.FirstOrDefault(r => !(r.ContainsKey("draft") && (bool)r["draft"]));
-                            if (rel == null) throw new Exception("no releases published yet");
-                        }
-                        else rel = js.Deserialize<Dictionary<string, object>>(wc.DownloadString("https://api.github.com/repos/" + repo + "/releases/latest"));
+                        wc.Headers[HttpRequestHeader.Accept] = "application/json";
+                        wc.Headers[HttpRequestHeader.CacheControl] = "no-cache";
+                        man = js.Deserialize<Dictionary<string, object>>(wc.DownloadString(url + "?t=" + DateTime.UtcNow.Ticks));
                     }
+                    var baseUri = new Uri(url);
                     var info = new ReleaseInfo
                     {
-                        Tag = S(rel, "tag_name"), Name = S(rel, "name"), Notes = S(rel, "body"), HtmlUrl = S(rel, "html_url"),
+                        Tag = S(man, "tag"), Name = S(man, "name"), Notes = S(man, "notes"),
+                        HtmlUrl = "https://github.com/" + repo.Trim().Trim('/') + "/tree/main/updates"
                     };
-                    DateTime.TryParse(S(rel, "published_at"), out info.Published);
-                    var assets = new Dictionary<string, Tuple<string, long>>(StringComparer.OrdinalIgnoreCase);
-                    if (rel.ContainsKey("assets") && rel["assets"] is System.Collections.ArrayList al)
-                        foreach (Dictionary<string, object> a in al)
-                            assets[S(a, "name")] = Tuple.Create(S(a, "browser_download_url"), a.ContainsKey("size") ? Convert.ToInt64(a["size"]) : 0L);
-                    if (!assets.ContainsKey("manifest.json")) throw new Exception("release " + info.Tag + " has no manifest.json");
-
-                    Dictionary<string, object> man;
-                    using (var wc = Client()) man = js.Deserialize<Dictionary<string, object>>(wc.DownloadString(assets["manifest.json"].Item1));
-                    info.Plugin = Asset(man, "plugin", assets);
-                    info.Firmware = Asset(man, "firmware", assets);
-                    if (string.IsNullOrEmpty(info.Notes) && man.ContainsKey("notes")) info.Notes = Convert.ToString(man["notes"]);
+                    DateTime.TryParse(S(man, "released"), out info.Published);
+                    info.Plugin = Asset(man, "plugin", baseUri);
+                    info.Firmware = Asset(man, "firmware", baseUri);
+                    if (string.IsNullOrEmpty(info.Tag) && info.Plugin?.Version != null) info.Tag = "v" + info.Plugin.Version;
 
                     Latest = info; LastCheck = DateTime.Now; LastError = "";
-                    Say(string.Format("Latest release {0}: plugin {1}, firmware {2}", info.Tag,
+                    Say(string.Format("Latest: plugin {0}, firmware {1}",
                         info.Plugin?.Version?.ToString() ?? "-", info.Firmware?.Version?.ToString() ?? "-"));
                     return info;
                 }
@@ -134,7 +128,7 @@ namespace SimSpares.AdaptiveMotion.IO
             });
         }
 
-        private static UpdateAsset Asset(Dictionary<string, object> man, string key, Dictionary<string, Tuple<string, long>> assets)
+        private static UpdateAsset Asset(Dictionary<string, object> man, string key, Uri baseUri)
         {
             if (!man.ContainsKey(key) || !(man[key] is Dictionary<string, object> d)) return null;
             var a = new UpdateAsset
@@ -143,8 +137,10 @@ namespace SimSpares.AdaptiveMotion.IO
                 Board = S(d, "board"), SoftDevice = S(d, "softdevice")
             };
             Version.TryParse(S(d, "version"), out a.Version);
-            if (a.FileName.Length == 0 || !assets.ContainsKey(a.FileName)) return null;
-            a.Url = assets[a.FileName].Item1; a.Size = assets[a.FileName].Item2;
+            string rel = S(d, "url");
+            if (a.FileName.Length == 0 || a.Version == null || rel.Length == 0) return null;
+            a.Url = new Uri(baseUri, rel).ToString();
+            long.TryParse(S(d, "size"), out a.Size);
             return a;
         }
 
@@ -154,7 +150,7 @@ namespace SimSpares.AdaptiveMotion.IO
         {
             if (e is WebException we && we.Response is HttpWebResponse r)
             {
-                if ((int)r.StatusCode == 404) return "repository or release not found (is the repository public, and is a release published?)";
+                if ((int)r.StatusCode == 404) return "no update channel found (is the repository public, and has a release been published?)";
                 if ((int)r.StatusCode == 403) return "GitHub refused the request (rate limit: try again in an hour)";
                 return "HTTP " + (int)r.StatusCode + " " + r.StatusDescription;
             }

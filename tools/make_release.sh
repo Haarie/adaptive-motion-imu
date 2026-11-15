@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
-# Assemble a GitHub release for the plugin's Update tab: plugin DLL (built against the real SimHub
-# references), firmware .uf2 and manifest.json with SHA-256 checksums.
-#   NET48=... SIMHUB=... tools/make_release.sh <plugin-version> [notes-file]
-# Then:  gh release create v<plugin-version> release/v<ver>/* --title "..." --notes-file <notes>
+# Publish a release to the update channel read by the plugin's Update tab:
+#   updates/<channel>/manifest.json            <- the plugin reads this (raw.githubusercontent.com, main branch)
+#   updates/<channel>/<ver>/SimSpares.AdaptiveMotion.dll   (built against the real SimHub references)
+#   updates/<channel>/<ver>/AdaptiveMotionIMU_promicro_nrf52840.uf2
+# Usage:  NET48=... SIMHUB=... tools/make_release.sh <plugin-version> <notes.md> [stable|beta]
+# Then commit + push updates/ (the repository must be public).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VER=${1:?plugin version}; NOTES=${2:-}
-OUT="$ROOT/release/v$VER"; rm -rf "$OUT"; mkdir -p "$OUT"
+VER=${1:?plugin version}; NOTES=${2:?notes file}; CH=${3:-stable}
+DIR="$ROOT/updates/$CH"; OUT="$DIR/$VER"
+rm -rf "$OUT"; mkdir -p "$OUT"
 "$ROOT/plugin/tools/build_release.sh" "$VER" "$OUT"
 UF2=AdaptiveMotionIMU_promicro_nrf52840.uf2
 cp "$ROOT/firmware/$UF2" "$OUT/"
 FW=$(grep -m1 '#define FW_VERSION' "$ROOT/firmware/AdaptiveMotionIMU/AdaptiveMotionIMU.ino" | sed 's/.*"\(.*\)".*/\1/')
-sha() { sha256sum "$1" | cut -d' ' -f1; }
-python3 - "$OUT" "$VER" "$FW" "$(sha "$OUT/SimSpares.AdaptiveMotion.dll")" "$(sha "$OUT/$UF2")" "$UF2" "$NOTES" <<'PY'
-import json, sys, datetime
-out, ver, fw, sdll, suf2, uf2, notes = sys.argv[1:8]
+python3 - "$DIR" "$VER" "$FW" "$UF2" "$NOTES" <<'PY'
+import json, sys, datetime, hashlib, os
+d, ver, fw, uf2, notes = sys.argv[1:6]
+def f(name):
+    p = os.path.join(d, ver, name)
+    return {"file": name, "url": ver + "/" + name, "size": os.path.getsize(p),
+            "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest()}
 m = {
-  "schema": 1,
+  "schema": 2, "tag": "v" + ver, "name": "Adaptive Motion (IMU) " + ver,
   "released": datetime.date.today().isoformat(),
-  "plugin":   {"version": ver, "file": "SimSpares.AdaptiveMotion.dll", "sha256": sdll, "simhub_min": "9.0"},
-  "firmware": {"version": fw, "file": uf2, "sha256": suf2, "board": "nRF52840", "softdevice": "S140 version 6.1.1"},
-  "notes": open(notes).read() if notes else ""
+  "plugin":   dict(version=ver, simhub_min="9.0", **f("SimSpares.AdaptiveMotion.dll")),
+  "firmware": dict(version=fw, board="nRF52840", softdevice="S140 version 6.1.1", **f(uf2)),
+  "notes": open(notes).read(),
 }
-json.dump(m, open(out + "/manifest.json", "w"), indent=2)
-print(json.dumps(m, indent=2))
+json.dump(m, open(os.path.join(d, "manifest.json"), "w"), indent=2)
+print(json.dumps({k: v for k, v in m.items() if k != "notes"}, indent=2))
 PY
-echo "release files in $OUT"
+echo "channel '$CH' now offers plugin $VER / firmware $FW  ->  commit and push updates/$CH"

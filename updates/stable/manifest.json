@@ -1,0 +1,24 @@
+{
+  "schema": 2,
+  "tag": "v1.2.0",
+  "name": "Adaptive Motion (IMU) 1.2.0",
+  "released": "2026-11-15",
+  "plugin": {
+    "version": "1.2.0",
+    "simhub_min": "9.0",
+    "file": "SimSpares.AdaptiveMotion.dll",
+    "url": "1.2.0/SimSpares.AdaptiveMotion.dll",
+    "size": 129536,
+    "sha256": "8aabdae3286da6f458e15a288a9d6fa420858d72bc77ffaa8941c85a2110b200"
+  },
+  "firmware": {
+    "version": "1.3.1",
+    "board": "nRF52840",
+    "softdevice": "S140 version 6.1.1",
+    "file": "AdaptiveMotionIMU_promicro_nrf52840.uf2",
+    "url": "1.2.0/AdaptiveMotionIMU_promicro_nrf52840.uf2",
+    "size": 169472,
+    "sha256": "abd9a5a46fb890e776495d739f528daa3307bc66c068de7a9f5213be41251e1b"
+  },
+  "notes": "## Adaptive Motion (IMU) 1.2.0\n\n**Plugin 1.2.0**\n- New **Update** tab: shows installed and latest versions, installs plugin updates (SimHub closes, the plugin is replaced, SimHub starts again) and keeps the previous version for roll back.\n- One-click **firmware update** for the IMU box from the same tab.\n- **Data logging** to CSV in a folder of your choice (Start/Stop on the Live view or Settings, auto start with the game, LogToggle action).\n- Live view shows `IDLE: CAPTURE LEVEL` until the level is captured; clean start after other software probed the COM port.\n\n**Firmware 1.3.1**\n- `BOOTLOADER` command: the box restarts into update mode by itself (used by the Update tab).\n- Learns its own resting 1 g (works with uncalibrated sensors), 6-position accelerometer calibration, `DIAG` command.\n\nFirmware 1.3.0 or older: the first update to 1.3.1 asks you to double-tap RST to GND once.\n"
+}
