@@ -4,10 +4,11 @@
   Right-click > "Run with PowerShell", or:
     powershell -ExecutionPolicy Bypass -File imu_check.ps1 -Port COM8
     powershell -ExecutionPolicy Bypass -File imu_check.ps1 -Port COM8 -Live 30   # live tilt view for 30 s
+    powershell -ExecutionPolicy Bypass -File imu_check.ps1 -Port COM8 -Live 60 -Csv tilt.csv   # + log every frame
 
   Close the Arduino IDE serial monitor and SimHub first: only one program can open the COM port.
 #>
-param([string]$Port = "COM8", [int]$Seconds = 4, [int]$Live = 0)
+param([string]$Port = "COM8", [int]$Seconds = 4, [int]$Live = 0, [string]$Csv = "")
 
 $ErrorActionPreference = "Stop"
 function Crc8([byte[]]$b, [int]$from, [int]$count) {
@@ -30,9 +31,15 @@ Start-Sleep -Milliseconds 800     # fw < 1.2.1 only notices an open port every 0
 $sp.DiscardInBuffer()
 $sp.Write("INFO`n"); Start-Sleep -Milliseconds 100; $sp.Write("BIAS`n")
 
+$log = $null
+if ($Csv) {
+    $log = New-Object System.IO.StreamWriter((Join-Path (Get-Location) $Csv), $false)
+    $log.WriteLine("t_us,ax_g,ay_g,az_g,gx_dps,gy_dps,gz_dps,q0,q1,q2,q3,peak_mg,vib_mg,flags,dropped,text")
+}
+$inv = [System.Globalization.CultureInfo]::InvariantCulture
 $buf = New-Object System.Collections.Generic.List[byte]
 $texts = @(); $imu = 0; $bad = 0; $raw = 0; $last = $null; $flagsSeen = 0
-$tEnd = (Get-Date).AddSeconds([Math]::Max($Seconds, $Live)); $nextLive = Get-Date
+$tEnd = (Get-Date).AddSeconds([Math]::Max($Seconds, $Live)); $nextLive = Get-Date; $nextPrint = (Get-Date).AddSeconds(2)
 $tmp = New-Object byte[] 4096
 while ((Get-Date) -lt $tEnd) {
     $n = 0
@@ -45,7 +52,8 @@ while ((Get-Date) -lt $tEnd) {
         $f = $buf.GetRange(0, 6 + $len).ToArray()
         if ((Crc8 $f 2 (3 + $len)) -ne $f[5 + $len]) { $bad++; $buf.RemoveAt(0); continue }
         $buf.RemoveRange(0, 6 + $len)
-        if ($f[2] -eq 0x02) { $t = [System.Text.Encoding]::ASCII.GetString($f, 5, $len); $texts += $t; Write-Host "  device: $t" -ForegroundColor Green }
+        if ($f[2] -eq 0x02) { $t = [System.Text.Encoding]::ASCII.GetString($f, 5, $len); $texts += $t; Write-Host "  device: $t" -ForegroundColor Green
+            if ($log) { $log.WriteLine(",,,,,,,,,,,,,,,""$t""") } }
         elseif ($f[2] -eq 0x01 -and $len -eq 30) {
             $imu++; $p = 5
             $last = [pscustomobject]@{
@@ -55,6 +63,11 @@ while ((Get-Date) -lt $tEnd) {
                 q2 = [BitConverter]::ToInt16($f, $p + 20) / 16384.0; q3 = [BitConverter]::ToInt16($f, $p + 22) / 16384.0
                 peak = [BitConverter]::ToUInt16($f, $p + 24); vib = [BitConverter]::ToUInt16($f, $p + 26); flags = $f[$p + 28]; drop = $f[$p + 29] }
             $flagsSeen = $flagsSeen -bor $last.flags
+            if ($log) {
+                $log.WriteLine([string]::Format($inv, "{0},{1:F3},{2:F3},{3:F3},{4:F1},{5:F1},{6:F1},{7:F4},{8:F4},{9:F4},{10:F4},{11},{12},{13},{14},",
+                    [BitConverter]::ToUInt32($f, $p), $last.ax, $last.ay, $last.az, $last.gx, $last.gy, $last.gz,
+                    $last.q0, $last.q1, $last.q2, $last.q3, $last.peak, $last.vib, $last.flags, $last.drop))
+            }
         }
     }
     if ($Live -gt 0 -and $last -and (Get-Date) -ge $nextLive) {
@@ -62,12 +75,15 @@ while ((Get-Date) -lt $tEnd) {
         $sinp = 2 * ($last.q0 * $last.q2 - $last.q3 * $last.q1); $sinp = [Math]::Max(-1, [Math]::Min(1, $sinp))
         $tiltA = [Math]::Asin($sinp) * 180 / [Math]::PI
         $tiltB = [Math]::Atan2(2 * ($last.q0 * $last.q1 + $last.q2 * $last.q3), 1 - 2 * ($last.q1 * $last.q1 + $last.q2 * $last.q2)) * 180 / [Math]::PI
-        $line = "acc[g] {0,6:F3} {1,6:F3} {2,6:F3} | gyro[dps] {3,6:F1} {4,6:F1} {5,6:F1} | tilt A {6,6:F1}  B {7,6:F1} deg | vib {8} mg" -f `
-            $last.ax, $last.ay, $last.az, $last.gx, $last.gy, $last.gz, $tiltA, $tiltB, $last.vib
+        $qn = [Math]::Sqrt($last.q0*$last.q0 + $last.q1*$last.q1 + $last.q2*$last.q2 + $last.q3*$last.q3)
+        $line = "|q| {9:F3} | acc[g] {0,6:F3} {1,6:F3} {2,6:F3} | gyro[dps] {3,6:F1} {4,6:F1} {5,6:F1} | tilt A {6,6:F1}  B {7,6:F1} deg | vib {8} mg" -f `
+            $last.ax, $last.ay, $last.az, $last.gx, $last.gy, $last.gz, $tiltA, $tiltB, $last.vib, $qn
         Write-Host "`r$line   " -NoNewline
+        if ((Get-Date) -ge $nextPrint) { $nextPrint = (Get-Date).AddSeconds(2); Write-Host "" }   # keep a line every 2 s
     }
 }
 $sp.Close()
+if ($log) { $log.Close(); Write-Host ""; Write-Host "Logged every frame to $(Join-Path (Get-Location) $Csv)" -ForegroundColor Cyan }
 if ($Live -gt 0) { Write-Host "" }
 
 Write-Host ""

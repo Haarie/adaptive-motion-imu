@@ -54,6 +54,7 @@ static double g_noiseDps = 0.0;     // +/- uniform gyro noise
 static double rollNowDeg() { return 45.0 + g_rateDps * (g_us / 1e6); }
 static std::vector<uint8_t> g_rx;
 static size_t g_rxi = 0;
+static bool g_fixedAcc = false; static double g_fa[3];   // attitude scenario: fixed accel vector (g)
 static double g_accScale = 1.0;     // accelerometer scale error (real MPU-6050s: 0.95..1.05)
 static int16_t accRaw(double g) { return (int16_t)lround(g * g_accScale * 8192.0); }   // ±4 g
 struct FakeWire {
@@ -69,6 +70,7 @@ struct FakeWire {
       double r = rollNowDeg() * PI / 180, s = sin(r), c = cos(r);
       double gx = g_biasDps + g_rateDps + g_noiseDps * ((rand() / (double)RAND_MAX) * 2 - 1);
       int16_t v[7] = { 0, accRaw(s), accRaw(c), 0, (int16_t)lround(gx * 65.5), 0, 0 };   // ±500 dps
+      if (g_fixedAcc) { v[0] = accRaw(g_fa[0]); v[1] = accRaw(g_fa[1]); v[2] = accRaw(g_fa[2]); v[4] = 0; }
       for (int i = 0; i < 7; i++) { g_rx.push_back((uint8_t)(v[i] >> 8)); g_rx.push_back((uint8_t)v[i]); }
     }
     while (g_rx.size() < n) g_rx.push_back(0);
@@ -97,7 +99,20 @@ static int scenario(double bias, double rate, double secs) {
   return 0;
 }
 
+// ./host_test att ax ay az -> quaternion + script's tilt A/B after 20 s at a fixed accel vector
+static int attitude(double ax, double ay, double az) {
+  g_fixedAcc = true; g_fa[0] = ax; g_fa[1] = ay; g_fa[2] = az;
+  setup();
+  uint32_t end = g_us + 20000000UL;
+  while (g_us < end) { g_us += 100; loop(); }
+  double sp = 2 * (q0 * q2 - q3 * q1); if (sp > 1) sp = 1; if (sp < -1) sp = -1;
+  printf("q=(%.4f %.4f %.4f %.4f) A=%.1f B=%.1f\n", q0, q1, q2, q3, asin(sp) * 57.2958,
+         atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2)) * 57.2958);
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  if (argc > 4 && !strcmp(argv[1], "att")) return attitude(atof(argv[2]), atof(argv[3]), atof(argv[4]));
   if (argc > 4 && !strcmp(argv[1], "bias")) { if (argc > 5) g_accScale = atof(argv[5]); return scenario(atof(argv[2]), atof(argv[3]), atof(argv[4])); }
   setup();
   // run until 3 IMU frames (type 0x01) were emitted
