@@ -81,6 +81,9 @@ namespace SimSpares.AdaptiveMotion.IO
                     _port.Open();
                     Log?.Invoke("Opened " + _portName);
                     Thread.Sleep(50);
+                    // A bare newline first: other software probing COM ports (e.g. SimHub's Arduino
+                    // detection) can leave a half line in the device's command buffer -> "ERR unknown".
+                    Send("");
                     Send("INFO");
                     var stream = _port.BaseStream;
                     while (_run && _port.IsOpen)

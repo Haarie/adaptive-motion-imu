@@ -129,13 +129,16 @@ namespace SimSpares.AdaptiveMotion.UI
                 : g.Status == ControllerStatus.Tripped || g.Status == ControllerStatus.SensorLost ? Bad : Warn;
             string mode = _p.ProxyActive ? "APPLYING" : _p.Settings.Mode == ApplyMode.MonitorOnly ? "MONITOR ONLY" : "PASSTHROUGH";
             double x = 300;
-            x = Badge(dc, g.Status.ToString().ToUpperInvariant(), x, 10, statusBrush);
+            // The controller only runs once the level is captured; until then say what is missing.
+            string status = g.Status == ControllerStatus.WaitingForSensor && connected && !_p.Settings.LevelCaptured
+                ? "IDLE: CAPTURE LEVEL" : g.Status.ToString().ToUpperInvariant();
+            x = Badge(dc, status, x, 10, statusBrush);
             x = Badge(dc, mode, x + 8, 10, _p.ProxyActive ? Accent : Track);
             x = Badge(dc, connected ? string.Format(CultureInfo.InvariantCulture, "{0:F0} Hz", _p.FrameRate) : "NO SENSOR", x + 8, 10, connected ? Track : Bad);
             if ((st.Flags & ImuFlags.Still) != 0) x = Badge(dc, "STILL", x + 8, 10, Track);
             if (_p.Park.MountShifted) x = Badge(dc, "MOUNT SHIFTED", x + 8, 10, Bad);
             if ((st.Flags & ImuFlags.WhoAmIUnexpected) != 0) x = Badge(dc, "CLONE IMU", x + 8, 10, Warn);
-            if (!_p.Settings.LevelCaptured) Badge(dc, "LEVEL NOT CAPTURED", x + 8, 10, Warn);
+
         }
 
         // ---- attitude indicator ------------------------------------------------------------------

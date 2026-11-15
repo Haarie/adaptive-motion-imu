@@ -265,7 +265,8 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Gain.Pitch", () => Math.Round(Controller.Snapshot.Pitch, 3));
             this.AttachDelegate("Gain.Roll", () => Math.Round(Controller.Snapshot.Roll, 3));
             this.AttachDelegate("Gain.Heave", () => Math.Round(Controller.Snapshot.Heave, 3));
-            this.AttachDelegate("Status", () => Controller.Snapshot.Status.ToString());
+            this.AttachDelegate("Status", () => Controller.Snapshot.Status == ControllerStatus.WaitingForSensor && SensorFresh && !Settings.LevelCaptured
+                ? "NeedsLevel" : Controller.Snapshot.Status.ToString());
             this.AttachDelegate("Applying", () => ProxyActive || (Settings.Mode == ApplyMode.SimHubGainEvents && Settings.AdaptiveEnabled));
             this.AttachDelegate("Tripped", () => Controller.Tripped);
             this.AttachDelegate("ImpactCount", () => Controller.ImpactCount);
