@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Build on RYZEN-Racing (where SimHub is installed), Visual Studio 2022 or `dotnet build -c Release`.
-    Needs the .NET Framework 4.8 Developer Pack. References come straight from your SimHub install.
+    Build on the PC where SimHub is installed: run ..\install.ps1 (builds + copies into SimHub),
+    or `dotnet build -c Release` with any .NET SDK (6..10). The .NET Framework 4.8 reference
+    assemblies come from NuGet, so no Developer Pack is needed. References come from your SimHub install.
     Override the path if needed:  dotnet build -c Release -p:SimHubDir="D:\SimHub"
   -->
   <PropertyGroup>
@@ -15,12 +16,17 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <SimHubDir Condition="'$(SimHubDir)' == ''">C:\Program Files (x86)\SimHub</SimHubDir>
-    <!-- Set to false to build without copying into SimHub (e.g. SimHub running and locked) -->
-    <DeployToSimHub Condition="'$(DeployToSimHub)' == ''">true</DeployToSimHub>
+    <!-- true = copy into SimHub after building (needs an elevated prompt: Program Files). install.ps1 handles it. -->
+    <DeployToSimHub Condition="'$(DeployToSimHub)' == ''">false</DeployToSimHub>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- .NET Framework 4.8 reference assemblies via NuGet: builds with the plain .NET SDK -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

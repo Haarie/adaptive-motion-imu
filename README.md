@@ -57,11 +57,13 @@ Boards Manager "ArduinoNRF" → Board **AliExpress ProMicro nRF52840** → Uploa
 Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.2.1 who=0x68 …`. LED: steady =
 sensor OK + host connected, slow blink = waiting for SimHub, fast blink = no sensor (check the four wires).
 
-## Build the plugin (RYZEN-Racing)
-1. Install the .NET Framework 4.8 Developer Pack and the .NET SDK (or Visual Studio 2022).
-2. Close SimHub. `cd plugin/SimSpares.AdaptiveMotion && dotnet build -c Release`
-   (DLL is copied into the SimHub folder; run the shell as admin or pass `-p:DeployToSimHub=false` and copy by hand).
-3. Start SimHub → enable the plugin when asked → left menu "Adaptive Motion".
+## Build and install the plugin (the PC with SimHub)
+1. Needs only the .NET SDK (any 6–10; `dotnet --list-sdks`). The .NET Framework 4.8 reference assemblies come from NuGet.
+2. `powershell -ExecutionPolicy Bypass -File plugin\install.ps1` — builds, waits until SimHub is closed, copies the DLL
+   into `C:\Program Files (x86)\SimHub` (one administrator prompt). Other SimHub folder: `-SimHubDir "D:\SimHub"`.
+3. Start SimHub → enable "Adaptive Motion (IMU)" when asked → left menu "Adaptive Motion".
+   Serial port: the board shows two COM ports; pick the one that answers (the user port, COM16 on the bench PC),
+   not the maintenance port.
 
 ## Live view
 SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a second screen / the rig display):
