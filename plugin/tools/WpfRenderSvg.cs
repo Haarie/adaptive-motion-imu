@@ -75,7 +75,8 @@ namespace System.Windows.Controls {
   public class ContentControl : Control { public object Content { get; set; } }
   public class UserControl : ContentControl { }
   public class Panel : FrameworkElement { public UIElementCollection Children { get; } = new UIElementCollection(); }
-  public class StackPanel : Panel { } public class WrapPanel : Panel { }
+  public enum Orientation { Horizontal, Vertical }
+  public class StackPanel : Panel { public Orientation Orientation { get; set; } } public class WrapPanel : Panel { }
   public class DockPanel : Panel { public static void SetDock(UIElement e, Dock d) { } }
   public struct GridLength { public GridLength(double v) { } public static GridLength Auto => new GridLength(); }
   public class ColumnDefinition { public GridLength Width { get; set; } }

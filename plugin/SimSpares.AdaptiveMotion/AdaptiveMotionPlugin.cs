@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows.Controls;
 using System.Windows.Media;
 using GameReaderCommon;
@@ -27,7 +28,13 @@ namespace SimSpares.AdaptiveMotion
         internal readonly LagEstimator PitchTracking = new LagEstimator();
         internal readonly LagEstimator RollTracking = new LagEstimator();
         internal ParkMonitor Park;
+        internal readonly DataLogger Logger = new DataLogger();
         private volatile bool _gameRunning;
+        // logging
+        private double _nextLogSec;
+        private bool _autoLogging;
+        private volatile string _gameName = "", _carName = "", _trackName = "", _gear = "";
+        private double _speedKmh = double.NaN, _rpm = double.NaN, _gSurge = double.NaN, _gSway = double.NaN, _gHeave = double.NaN;
 
         // --- latest data (written on the IMU thread, read on SimHub/UI threads) -------------------
         private readonly object _stateLock = new object();
@@ -87,9 +94,10 @@ namespace SimSpares.AdaptiveMotion
             };
             Imu.Log += Note;
             Proxy.Log += Note;
+            Logger.Log += Note;
             Proxy.CommandModes += (p, r) => { _cmdPitch = (float)p; _cmdRoll = (float)r; };
             Controller.TripRaised += msg => { Note("TRIP: " + msg); this.TriggerEvent("Trip"); };
-            Controller.ImpactDetected += () => this.TriggerEvent("Impact");
+            Controller.ImpactDetected += () => { this.TriggerEvent("Impact"); LogEvent("IMPACT"); };
 
             RegisterProperties();
             RegisterActionsAndEvents();
@@ -172,6 +180,13 @@ namespace SimSpares.AdaptiveMotion
                 }
                 _lastFrameSec = now;
             }
+
+            if (Logger.Active && now >= _nextLogSec)
+            {
+                double period = 1.0 / Math.Max(1, Math.Min(250, Settings.LogRateHz));
+                _nextLogSec = (now - _nextLogSec > period) ? now + period : _nextLogSec + period;
+                Logger.Write(LogRow(st, f, now, null));
+            }
         }
 
         private void FinishLevelCapture()
@@ -198,8 +213,15 @@ namespace SimSpares.AdaptiveMotion
         public void DataUpdate(PluginManager pluginManager, ref GameData data)
         {
             double now = ImuSerialLink.NowSec;
+            bool wasRunning = _gameRunning;
             _gameRunning = data.GameRunning;
             Controller.Tick(now);
+            ReadGameData(data);
+            if (Settings.LogAutoStart)
+            {
+                if (_gameRunning && !wasRunning && !Logger.Active) { StartLog(); _autoLogging = true; }
+                else if (!_gameRunning && wasRunning && _autoLogging) { StopLog(); _autoLogging = false; }
+            }
 
             if (!double.IsNaN(_neutralUntil) && now >= _neutralUntil)
             {
@@ -233,6 +255,7 @@ namespace SimSpares.AdaptiveMotion
 
         public void End(PluginManager pluginManager)
         {
+            Logger.Stop();
             Proxy.Stop();
             Imu.Stop();
             SaveSettings();
@@ -290,6 +313,10 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Proxy.Forwarded", () => Proxy.Forwarded);
             this.AttachDelegate("Proxy.Active", () => ProxyActive);
             this.AttachDelegate("LastMessage", () => _lastMessage);
+            this.AttachDelegate("Log.Active", () => Logger.Active);
+            this.AttachDelegate("Log.File", () => Logger.FilePath);
+            this.AttachDelegate("Log.Rows", () => Logger.Rows);
+            this.AttachDelegate("Log.Seconds", () => Math.Round(Logger.Seconds(ImuSerialLink.NowSec), 0));
         }
 
         private void RegisterActionsAndEvents()
@@ -311,6 +338,9 @@ namespace SimSpares.AdaptiveMotion
             this.AddAction("AutoAlignRest", (a, b) => StartAlignCapture(true));
             this.AddAction("AutoAlignNoseUp", (a, b) => StartAlignCapture(false));
             this.AddAction("ShowGyroBias", (a, b) => Imu.Send("BIAS"));
+            this.AddAction("LogStart", (a, b) => StartLog());
+            this.AddAction("LogStop", (a, b) => { StopLog(); _autoLogging = false; });
+            this.AddAction("LogToggle", (a, b) => { if (Logger.Active) { StopLog(); _autoLogging = false; } else StartLog(); });
         }
 
         /// <summary>Auto-align step 1 (rig at centre, still) or step 2 (rig pitched nose-up ≥ 2°, still).</summary>
@@ -371,8 +401,116 @@ namespace SimSpares.AdaptiveMotion
             Note("Capturing actuator neutral for 2 s — SimHub motion on, game idle/paused");
         }
 
+        // ======================================================================================
+        // Data logging
+        // ======================================================================================
+        internal static readonly string[] LogColumns =
+        {
+            "time_s", "device_us", "pitch_deg", "roll_deg", "pitch_rate_dps", "roll_rate_dps", "yaw_rate_dps",
+            "cue_surge_g", "cue_sway_g", "cue_heave_g", "lin_surge_g", "lin_sway_g", "lin_heave_g",
+            "peak_g", "vib_rms_g", "flags", "gain_global", "gain_pitch", "gain_roll", "gain_heave", "status",
+            "level_global", "level_pitch", "level_roll", "level_heave", "applying", "cmd_pitch", "cmd_roll",
+            "game_running", "speed_kmh", "gear", "rpm", "game_accel_surge", "game_accel_sway", "game_accel_heave", "event"
+        };
+
+        public void StartLog()
+        {
+            string tag = string.Join("_", new[] { _gameName, _carName, _trackName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            var c = Settings.Controller;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string[] comments =
+            {
+                "Adaptive Motion IMU log - Sim-Spares",
+                "started " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", inv) + (tag.Length > 0 ? "  " + tag.Replace("_", " / ") : ""),
+                "device " + _deviceInfo,
+                string.Format(inv, "mode {0}, adaptive {1}, level captured {2} (pitch {3:F2}, roll {4:F2}), rate {5} Hz",
+                    Settings.Mode, Settings.AdaptiveEnabled, Settings.LevelCaptured, Settings.LevelPitchDeg, Settings.LevelRollDeg, Settings.LogRateHz),
+                string.Format(inv, "limits pitch {0} roll {1} deg, rate {2} deg/s, heave {3} g, cue {4} g, vib {5} g, knee {6}, min gain {7}, impact {8} g, trip {9}/{10} deg",
+                    c.PitchLimitDeg, c.RollLimitDeg, c.RateLimitDps, c.HeaveLimitG, c.CueLimitG, c.VibLimitG, c.Knee, c.MinGain, c.ImpactG, c.PitchHardDeg, c.RollHardDeg),
+                "flags: 1 I2C error, 2 gyro calibrated, 4 accel sat, 8 gyro sat, 16 clone IMU, 32 frames dropped, 64 tilt correction gated, 128 still",
+                "level_* = fraction of each limit in use (1 = at the limit); events (TRIP, IMPACT, messages) are rows with only time_s and event"
+            };
+            _nextLogSec = 0;
+            Logger.Start(Settings.LogFolder, tag, string.Join(",", LogColumns), comments, ImuSerialLink.NowSec);
+        }
+
+        public void StopLog() => Logger.Stop();
+
+        private void LogEvent(string text)
+        {
+            if (!Logger.Active) return;
+            var sb = new System.Text.StringBuilder();
+            sb.Append(Logger.Seconds(ImuSerialLink.NowSec).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(',', LogColumns.Length - 1);
+            sb.Append('"').Append(text.Replace("\"", "'")).Append('"');
+            Logger.Write(sb.ToString());
+        }
+
+        private string LogRow(PlatformState st, ImuFrame f, double now, string evt)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var g = Controller.Snapshot;
+            var sb = new System.Text.StringBuilder(320);
+            Action<double, string> n = (v, fmt) => { if (!double.IsNaN(v) && !double.IsInfinity(v)) sb.Append(v.ToString(fmt, inv)); sb.Append(','); };
+            n(Logger.Seconds(now), "F4");
+            sb.Append(f.DeviceMicros).Append(',');
+            n(st.PitchDeg, "F3"); n(st.RollDeg, "F3");
+            n(st.PitchRateDps, "F2"); n(st.RollRateDps, "F2"); n(st.YawRateDps, "F2");
+            n(st.CueSurgeG, "F4"); n(st.CueSwayG, "F4"); n(st.CueHeaveG, "F4");
+            n(st.LinSurgeG, "F4"); n(st.LinSwayG, "F4"); n(st.LinHeaveG, "F4");
+            n(st.PeakDevG, "F3"); n(st.VibRmsG, "F4");
+            sb.Append((int)st.Flags).Append(',');
+            n(g.Global, "F3"); n(g.Pitch, "F3"); n(g.Roll, "F3"); n(g.Heave, "F3");
+            sb.Append(g.Status).Append(',');
+            n(Controller.LevelGlobal, "F3"); n(Controller.LevelPitch, "F3"); n(Controller.LevelRoll, "F3"); n(Controller.LevelHeave, "F3");
+            sb.Append(ProxyActive ? 1 : 0).Append(',');
+            n(_cmdPitch, "F3"); n(_cmdRoll, "F3");
+            sb.Append(_gameRunning ? 1 : 0).Append(',');
+            if (Settings.LogGameData && _gameRunning)
+            {
+                n(_speedKmh, "F1"); sb.Append(_gear.Replace(",", "")).Append(','); n(_rpm, "F0");
+                n(_gSurge, "F3"); n(_gSway, "F3"); n(_gHeave, "F3");
+            }
+            else sb.Append(",,,,,,");
+            if (evt != null) sb.Append('"').Append(evt).Append('"');
+            return sb.ToString();
+        }
+
+        // Game values are read by name (reflection) so a SimHub version without one of them still loads the plugin.
+        private static readonly System.Collections.Generic.Dictionary<string, System.Reflection.PropertyInfo> _propCache =
+            new System.Collections.Generic.Dictionary<string, System.Reflection.PropertyInfo>();
+        private static object Prop(object o, string name)
+        {
+            if (o == null) return null;
+            string key = o.GetType().FullName + "." + name;
+            if (!_propCache.TryGetValue(key, out var pi)) { pi = o.GetType().GetProperty(name); _propCache[key] = pi; }
+            try { return pi?.GetValue(o, null); } catch { return null; }
+        }
+        private static double Num(object v)
+        {
+            if (v == null) return double.NaN;
+            try { return Convert.ToDouble(v, System.Globalization.CultureInfo.InvariantCulture); } catch { return double.NaN; }
+        }
+
+        private void ReadGameData(GameData data)
+        {
+            if (!data.GameRunning) return;
+            object nd = Prop(data, "NewData");
+            _gameName = Convert.ToString(Prop(data, "GameName")) ?? "";
+            if (nd == null) return;
+            _carName = Convert.ToString(Prop(nd, "CarModel")) ?? "";
+            _trackName = Convert.ToString(Prop(nd, "TrackName")) ?? "";
+            _speedKmh = Num(Prop(nd, "SpeedKmh"));
+            _rpm = Num(Prop(nd, "Rpms"));
+            _gear = Convert.ToString(Prop(nd, "Gear")) ?? "";
+            _gSurge = Num(Prop(nd, "AccelerationSurge"));
+            _gSway = Num(Prop(nd, "AccelerationSway"));
+            _gHeave = Num(Prop(nd, "AccelerationHeave"));
+        }
+
         internal void Note(string msg)
         {
+            LogEvent(msg);
             _lastMessage = DateTime.Now.ToString("HH:mm:ss ") + msg;
             try { SimHub.Logging.Current.Info("[AdaptiveMotion] " + msg); } catch { }
         }

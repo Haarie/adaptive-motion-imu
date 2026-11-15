@@ -78,6 +78,14 @@ SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a se
 - Header badges: controller status, mode, sensor rate, STILL, MOUNT SHIFTED, CLONE IMU, LEVEL NOT CAPTURED.
 (The preview image is rendered off-Windows through an SVG stand-in, so fonts differ slightly from SimHub.)
 
+## Data logging
+Settings → **Data logging (CSV)**: pick a folder (**Browse…**, default `Documents\Adaptive Motion IMU\logs`), rows per second
+(1–250), optional auto start/stop with the game, optional game data (speed, gear, rpm, game accelerations).
+**Start log / Stop log** on the Settings page or the Live-view bar, or actions `LogStart` / `LogStop` / `LogToggle`.
+One file per session, `AMIMU_<date>_<time>_<game>_<car>_<track>.csv`, `#` header lines with firmware, mode and limits,
+then one row per sample (tilt, rates, cue, gains, status, limit usage, commands, game data) and event rows
+(TRIP, IMPACT, messages). Written on a background thread: the IMU loop never waits for the disk.
+
 ## Mounting
 Default `mount_style = "side"`: the box lies along a horizontal 30/40-series slot-8 cross-member, bolted to
 its vertical side face; a 6 mm flange along the box's long side carries two M6 bolts 32 mm apart (±3 mm play),

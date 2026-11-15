@@ -20,6 +20,8 @@ namespace SimSpares.AdaptiveMotion
         private readonly TextBlock _live = Mono();
         private readonly TextBlock _msg = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
         private readonly DispatcherTimer _timer;
+        private Button _logBtnLive, _logBtnSettings;
+        private readonly TextBlock _logStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
 
         public SettingsControl(AdaptiveMotionPlugin plugin)
         {
@@ -62,6 +64,44 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Header("What the plugin is allowed to do"));
             root.Children.Add(Row("Mode", EnumBox(s.Mode, v => s.Mode = v)));
             root.Children.Add(Row("Adaptive enabled", Check(s.AdaptiveEnabled, v => s.AdaptiveEnabled = v)));
+
+            // ---------------- Logging -----------------------------------------------------------
+            root.Children.Add(Header("Data logging (CSV)"));
+            var folderBox = Txt(string.IsNullOrWhiteSpace(s.LogFolder) ? IO.DataLogger.DefaultFolder : s.LogFolder, v => s.LogFolder = v);
+            folderBox.Width = 420;
+            var folderRow = new StackPanel { Orientation = Orientation.Horizontal };
+            folderRow.Children.Add(folderBox);
+            var browse = Btn("Browse…", () =>
+            {
+                using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
+                {
+                    dlg.Description = "Folder for Adaptive Motion log files";
+                    dlg.ShowNewFolderButton = true;
+                    string cur = folderBox.Text.Trim();
+                    if (System.IO.Directory.Exists(cur)) dlg.SelectedPath = cur;
+                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        folderBox.Text = dlg.SelectedPath; s.LogFolder = dlg.SelectedPath; _p.SaveSettings();
+                        _p.Note("Log folder: " + dlg.SelectedPath);
+                    }
+                }
+            });
+            browse.Margin = new Thickness(6, 0, 0, 0);
+            folderRow.Children.Add(browse);
+            root.Children.Add(Row("Save logs in folder", folderRow));
+            root.Children.Add(Row("Rows per second (1-250)", IntBox(s.LogRateHz, v => s.LogRateHz = Math.Max(1, Math.Min(250, v)))));
+            root.Children.Add(Row("Start/stop automatically with the game", Check(s.LogAutoStart, v => s.LogAutoStart = v)));
+            root.Children.Add(Row("Include game data (speed, gear, rpm, game accelerations)", Check(s.LogGameData, v => s.LogGameData = v)));
+            _logBtnSettings = Btn("Start log", ToggleLog);
+            root.Children.Add(Buttons(
+                _logBtnSettings,
+                Btn("Open log folder", () =>
+                {
+                    string dir = string.IsNullOrWhiteSpace(s.LogFolder) ? IO.DataLogger.DefaultFolder : s.LogFolder;
+                    try { System.IO.Directory.CreateDirectory(dir); System.Diagnostics.Process.Start("explorer.exe", "\"" + dir + "\""); }
+                    catch (Exception e) { _p.Note("Cannot open folder: " + e.Message); }
+                })));
+            root.Children.Add(_logStatus);
 
             // ---------------- Envelope ----------------------------------------------------------
             var c = s.Controller;
@@ -113,7 +153,8 @@ namespace SimSpares.AdaptiveMotion
                 Btn("Pop out window", () => VisualizerWindow.ShowFor(_p)),
                 Btn("Capture level (rig at centre)", () => _p.StartLevelCapture()),
                 Btn("Reset trip", () => _p.Controller.ResetTrip()),
-                Btn("Toggle adaptive", () => { s.AdaptiveEnabled = !s.AdaptiveEnabled; _p.Note("Adaptive " + (s.AdaptiveEnabled ? "ON" : "OFF")); }));
+                Btn("Toggle adaptive", () => { s.AdaptiveEnabled = !s.AdaptiveEnabled; _p.Note("Adaptive " + (s.AdaptiveEnabled ? "ON" : "OFF")); }),
+                _logBtnLive = Btn("Start log", ToggleLog));
             DockPanel.SetDock(liveBar, Dock.Top);
             liveGrid.Children.Add(liveBar);
             liveGrid.Children.Add(new MotionVisualizer(_p));
@@ -157,6 +198,20 @@ namespace SimSpares.AdaptiveMotion
                 double.IsNaN(_p.Park.LastDeviationDeg) ? "--" : _p.Park.LastDeviationDeg.ToString("F2", CultureInfo.InvariantCulture),
                 _p.Park.MountShifted ? "MOUNT SHIFTED" : "");
             _msg.Text = _p.LastMessage;
+
+            var lg = _p.Logger;
+            string lbl = lg.Active ? "Stop log" : "Start log";
+            if (_logBtnLive != null && (string)_logBtnLive.Content != lbl) _logBtnLive.Content = lbl;
+            if (_logBtnSettings != null && (string)_logBtnSettings.Content != lbl) _logBtnSettings.Content = lbl;
+            _logStatus.Text = lg.Active
+                ? string.Format(CultureInfo.InvariantCulture, "● Recording {0:F0} s, {1} rows → {2}", lg.Seconds(IO.ImuSerialLink.NowSec), lg.Rows, lg.FilePath)
+                : (string.IsNullOrEmpty(lg.FilePath) ? "Not recording." : "Not recording. Last file: " + lg.FilePath);
+        }
+
+        private void ToggleLog()
+        {
+            // take a folder typed but not yet confirmed (no focus change)
+            if (_p.Logger.Active) _p.StopLog(); else { _p.SaveSettings(); _p.StartLog(); }
         }
 
         // ---------------- tiny UI helpers -----------------------------------------------------

@@ -28,6 +28,7 @@ body = [H1("Contents"), toc_block([
     ("Settings reference", "sensor, envelope, proxy, gain events"),
     ("Commissioning on the rig", "level, park pose, monitor laps, limits"),
     ("Applying gains", "UDP proxy step by step, or SimHub gain events"),
+    ("Data logging", "record sessions to CSV in a folder of your choice"),
     ("Dashboards and controls", "properties, actions, events"),
     ("Troubleshooting", "common problems"),
     ("Safety", "what the plugin is and is not"),
@@ -150,6 +151,13 @@ body += sect("UDP proxy", [
     ["Capture neutral", "button", "Motion on, game idle: stores each axis's rest value (the point gains scale around)."],
     ["I verified the decoded axes", "off", "Gains are only applied after you tick this (section 7)."],
 ])
+body += sect("Data logging (CSV)", [
+    ["Save logs in folder", "Documents\\Adaptive Motion IMU\\logs", "Where the CSV files go. <b>Browse…</b> picks a folder (new folders can be made in the dialog)."],
+    ["Rows per second", "100", "1-250. 250 = every sensor frame (about 2 MB per minute)."],
+    ["Start/stop automatically with the game", "off", "On: a new file starts when a game starts running and closes when it stops."],
+    ["Include game data", "on", "Adds speed, gear, rpm and the game's own accelerations next to the measured values."],
+    ["Start log / Stop log", "button", "Manual start/stop (also on the Live view bar). <b>Open log folder</b> opens it in Explorer."],
+])
 body += sect("SimHub gain-event mode", [
     ["One SimHub gain step", "5 %", "How much one SimHub Motion gain step changes the gain (match your SimHub setting)."],
     ["Max steps down", "8", "Never request more than this many steps below the starting gain."],
@@ -206,8 +214,33 @@ body += [PageBreak(), H1("7  Applying gains"),
     P("Set <b>One SimHub gain step</b> to the step size SimHub uses, so the plugin knows how many steps to request.", "small"),
 ]
 
-# 8 dashboards
-body += [PageBreak(), H1("8  Dashboards and controls"),
+# 8 logging
+body += [PageBreak(), H1("8  Data logging"),
+    P("The plugin can record everything it measures and does to a CSV file, for checking a session afterwards, tuning the "
+      "limits, or comparing the seat with what the game asked for. Files open in Excel, LibreOffice or Python."),
+    steps(["Settings &gt; <b>Data logging</b>: choose the folder with <b>Browse…</b> (default <b>Documents\\Adaptive Motion IMU\\logs</b>).",
+           "Start a recording with <b>START LOG</b> (Live view bar or Settings), a mapped button (action <b>LogToggle</b>), or tick "
+           "<i>Start/stop automatically with the game</i>.",
+           "While recording, the live view shows a red <b>● REC</b> badge and the Settings page shows the time, rows and file name.",
+           "<b>STOP LOG</b> closes the file. <b>Open log folder</b> shows it in Explorer."]),
+    P("File name: <font name='Mono'>AMIMU_2026-11-15_16-40-12_assettocorsa_ks_porsche_911_spa.csv</font> (date, time, game, car, track). "
+      "The first lines start with <b>#</b> and record the session: firmware, mode, level and all limits."),
+    table([["Columns", "Content"],
+           ["time_s, device_us", "Seconds since the start of the log; the box's own microsecond clock"],
+           ["pitch_deg, roll_deg, *_rate_dps", "Seat tilt and rotation rates"],
+           ["cue_*_g, lin_*_g", "Force felt in the seat (incl. tilt) and the platform's own acceleration (gravity removed)"],
+           ["peak_g, vib_rms_g, flags", "Impact peak, vibration, sensor flags (bit list in the file header)"],
+           ["gain_*, status, level_*", "What the controller applied, its state, and how much of each limit was in use"],
+           ["applying, cmd_pitch, cmd_roll", "Proxy applying gains; what SimHub commanded (proxy mode)"],
+           ["game_running, speed_kmh, gear, rpm, game_accel_*", "Game data at that moment (when enabled)"],
+           ["event", "Rows with only time_s and event: TRIP, IMPACT, level capture, messages"]],
+          [0.38, 0.62], mono_cols=(0,)),
+    callout("tip", "Send it over", "A log of a few laps with hard braking and kerbs is the best way to set the limits: "
+            "share the CSV and the peaks per corner can be read straight from it."),
+]
+
+# 9 dashboards
+body += [PageBreak(), H1("9  Dashboards and controls"),
     P("All values are SimHub properties under <font name='Mono'>AdaptiveMotionPlugin.</font> and can be used in Dash Studio, "
       "ShakeIt, LED profiles and NCalc formulas."),
     table([["Property", "Meaning"],
@@ -223,7 +256,8 @@ body += [PageBreak(), H1("8  Dashboards and controls"),
            ["Tracking.PitchDelayMs / PitchCoherence / RollDelayMs ...", "Measured delay between SimHub's command and the seat's response"],
            ["Park.State / ReferenceLearned / DeviationDeg / MountShifted", "Park check"],
            ["Proxy.Active / Proxy.Forwarded", "Proxy applying, packets forwarded"],
-           ["Mount.Auto / LastMessage", "Auto-align in use, last message from the plugin"]],
+           ["Mount.Auto / LastMessage", "Auto-align in use, last message from the plugin"],
+           ["Log.Active / Log.File / Log.Rows / Log.Seconds", "Recording state, file, rows written, duration"]],
           [0.5, 0.5], mono_cols=(0,)),
     H2("Actions (Controls and events)"),
     table([["Action", "Does"],
@@ -232,7 +266,8 @@ body += [PageBreak(), H1("8  Dashboards and controls"),
            ["ResetTrip / ResetGains", "Clear a trip / gains back to 1.0"],
            ["RelearnParkPose", "New park reference"],
            ["AutoAlignRest / AutoAlignNoseUp", "The two auto-align captures"],
-           ["GyroCalibrate / ShowGyroBias", "Forced gyro calibration / show the gyro zero point"]],
+           ["GyroCalibrate / ShowGyroBias", "Forced gyro calibration / show the gyro zero point"],
+           ["LogStart / LogStop / LogToggle", "Start, stop or toggle a CSV recording"]],
           [0.42, 0.58], mono_cols=(0,)),
     H2("Events"),
     table([["Event", "Raised when"],
@@ -245,7 +280,7 @@ body += [PageBreak(), H1("8  Dashboards and controls"),
 ]
 
 # 9 troubleshooting + 10 safety
-body += [PageBreak(), H1("9  Troubleshooting"),
+body += [PageBreak(), H1("10  Troubleshooting"),
     table([["Symptom", "Cause / fix"],
            ["Plugin not in the left menu", "SimHub didn't load it: re-run install.ps1 with SimHub closed, then accept 'enable plugin' at start-up."],
            ["Build fails", "Copy the errors from the PowerShell window. Check dotnet --list-sdks shows an SDK; the first build needs internet (NuGet)."],
@@ -258,9 +293,10 @@ body += [PageBreak(), H1("9  Troubleshooting"),
            ["Gains drop on every corner", "Limits too low for your rig and driving: raise them (section 6, step 7)."],
            ["Header never shows APPLYING", "All four needed: Mode UdpProxy, Adaptive enabled, level captured, axes verified."],
            ["Rig doesn't move in proxy mode", "SimHub's output not pointed at 127.0.0.1:33740, or controller host/port wrong. Proxy.Forwarded should count up."],
-           ["SENSORLOST", "No frames for a moment: USB cable or hub. Use a direct port and a shielded cable away from motor wiring."]],
+           ["SENSORLOST", "No frames for a moment: USB cable or hub. Use a direct port and a shielded cable away from motor wiring."],
+           ["Log start failed", "Folder not writable (e.g. inside Program Files) or disk full: pick another folder with Browse…."]],
           [0.33, 0.67]),
-    H1("10  Safety"),
+    H1("11  Safety"),
     callout("warn", "This is not a safety system", [
         "The plugin only ever <b>attenuates</b>: gains stay between the minimum gain and 1.0, and it never moves an actuator further from "
         "neutral than SimHub's own packet did.",
@@ -269,6 +305,6 @@ body += [PageBreak(), H1("9  Troubleshooting"),
 ]
 
 doc = ManualDoc(OUT, "Adaptive Motion IMU\nSimHub Plugin", "Install, live view, settings, commissioning",
-                "Plugin manual v1.0 · plugin 1.0 · firmware 1.3.0 · November 2026", "Sim racing motion · closed loop")
+                "Plugin manual v1.1 · plugin 1.1 · firmware 1.3.0 · November 2026", "Sim racing motion · closed loop")
 doc.build(story + start(body))
 print("wrote", OUT)

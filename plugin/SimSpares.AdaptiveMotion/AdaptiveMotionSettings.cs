@@ -55,5 +55,11 @@ namespace SimSpares.AdaptiveMotion
         // --- SimHub gain-event mode ---------------------------------------------------------
         public double SimHubGainStepPct = 5.0;   // must match one step of SimHub's gain control
         public int SimHubMaxSteps = 8;
+
+        // --- data logging -------------------------------------------------------------------
+        public string LogFolder = "";            // empty = Documents\Adaptive Motion IMU\logs
+        public int LogRateHz = 100;              // rows per second (max = sensor rate, 250)
+        public bool LogAutoStart = false;        // start when a game starts running, stop when it stops
+        public bool LogGameData = true;          // add speed, gear, rpm and the game's own accelerations
     }
 }

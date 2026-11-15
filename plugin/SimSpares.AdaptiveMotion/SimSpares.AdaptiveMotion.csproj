@@ -8,10 +8,11 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>   <!-- FolderBrowserDialog for the log folder -->
     <LangVersion>7.3</LangVersion>
     <AssemblyName>SimSpares.AdaptiveMotion</AssemblyName>
     <RootNamespace>SimSpares.AdaptiveMotion</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Haarie / Sim-Spares</Authors>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
