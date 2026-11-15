@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #pragma pop_macro("max")
 #pragma pop_macro("min")
 #include <EEPROM.h>
@@ -95,7 +96,7 @@
 // ----------------------------------------------------------------------------
 // Build configuration
 // ----------------------------------------------------------------------------
-#define FW_VERSION        "1.2.1"
+#define FW_VERSION        "1.3.0"
 #define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
 #define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
 #define SAMPLE_HZ         500         // internal fusion rate
@@ -119,7 +120,8 @@
 #define STILL_WINDOWS     4           // consecutive still windows before "still" (2 s)
 #define STILL_GYRO_PP_DPS 1.5f        // max peak-to-peak gyro per axis inside a window
 #define STILL_ACC_PP_G    0.03f       // max peak-to-peak of |a| inside a window (vibration / motion)
-#define STILL_ACC_ABS_G   0.15f       // |a| must still be within 1 g +- this (MPU-6050 scale is often 3-5 % off)
+#define STILL_ACC_ABS_G   0.25f       // |a| must still be within 1 g +- this (uncalibrated MPU-6050s can be ~20 % off)
+#define GREF_ALPHA        0.2f        // per still window: how fast gRef follows the resting |a|
 #define STILL_TILT_DEG    0.10f       // max gravity-direction change between windows (rejects slow rotation)
 #define BIAS_ALPHA        0.25f       // blend of each new still-window mean into the bias
 #define BIAS_MAX_STEP_DPS 0.25f       // max bias change per window (slew limit)
@@ -167,9 +169,12 @@ struct Persist {
   uint8_t  outDiv;
   uint8_t  calibrated;
   uint8_t  autoCal;       // learn gyro bias whenever the rig is still
+  float    accOfs[3];     // accelerometer zero-g offset, g (ACCCAL, 6-position calibration)
+  float    accScl[3];     // accelerometer scale factor
+  float    gRef;          // learned |a| at rest, g (absorbs what calibration leaves)
   uint8_t  crc;
 };
-static const uint16_t PERSIST_MAGIC = 0xAD02;
+static const uint16_t PERSIST_MAGIC = 0xAD03;
 static Persist P;
 
 // ----------------------------------------------------------------------------
@@ -179,6 +184,8 @@ static float accLsbPerG, gyrLsbPerDps;
 static float q0 = 1, q1 = 0, q2 = 0, q3 = 0;
 static float ix = 0, iy = 0, iz = 0;     // Mahony integral terms
 static uint8_t whoAmI = 0;
+static int16_t tempRaw = 0;                     // MPU die temperature (raw), for DIAG
+static float   dRawA[3], dRawG[3]; static uint32_t dN = 0;   // DIAG: raw means since the last DIAG
 static bool    i2cOk = false;
 static bool    streaming = true;
 static uint8_t seq = 0;
@@ -197,7 +204,7 @@ static float   hpPrev[3], hpOut[3];      // high-pass filter state (accel, g)
 static float   hpAlpha;
 
 // stillness detector state
-static float   sAcc[3], sGyr[3], sGmin[3], sGmax[3], sAnMin, sAnMax;
+static float   sAcc[3], sGyr[3], sGmin[3], sGmax[3], sAnMin, sAnMax, sAnSum;
 static float   sPrevAcc[3];
 static bool    sPrevValid = false;
 static uint16_t sN = 0;
@@ -233,15 +240,19 @@ static void persistDefaults() {
   P.outDiv = DEFAULT_OUT_DIV;
   P.calibrated = 0;
   P.autoCal = 1;
+  for (uint8_t i = 0; i < 3; i++) { P.accOfs[i] = 0.0f; P.accScl[i] = 1.0f; }
+  P.gRef = 1.0f;
 }
+#define PERSIST_CRC_LEN ((uint8_t)offsetof(Persist, crc))
 static void persistLoad() {
   EEPROM.get(0, P);
-  uint8_t c = crc8((const uint8_t *)&P, sizeof(P) - 1);
-  if (P.magic != PERSIST_MAGIC || c != P.crc || P.dlpf > 6 || P.outDiv == 0 || P.outDiv > 50)
+  uint8_t c = crc8((const uint8_t *)&P, PERSIST_CRC_LEN);
+  if (P.magic != PERSIST_MAGIC || c != P.crc || P.dlpf > 6 || P.outDiv == 0 || P.outDiv > 50 ||
+      !(P.gRef > 0.7f && P.gRef < 1.3f))
     persistDefaults();
 }
 static void persistSave() {
-  P.crc = crc8((const uint8_t *)&P, sizeof(P) - 1);
+  P.crc = crc8((const uint8_t *)&P, PERSIST_CRC_LEN);
   EEPROM.put(0, P);
   storeCommit();
 }
@@ -420,8 +431,17 @@ static bool readRaw(float &ax, float &ay, float &az, float &gx, float &gy, float
   satFlags = 0;
   for (uint8_t i = 0; i < 3; i++) if (r[i] == 32767 || r[i] == -32768) satFlags |= F_ACC_SAT;
   for (uint8_t i = 4; i < 7; i++) if (r[i] == 32767 || r[i] == -32768) satFlags |= F_GYR_SAT;
-  ax = r[0] / accLsbPerG; ay = r[1] / accLsbPerG; az = r[2] / accLsbPerG;
+  tempRaw = r[3];
+  float rax = r[0] / accLsbPerG, ray = r[1] / accLsbPerG, raz = r[2] / accLsbPerG;
   const float d2r = 0.01745329f;
+  if (dN < 100000UL) {
+    dRawA[0] += rax; dRawA[1] += ray; dRawA[2] += raz;
+    for (uint8_t i = 0; i < 3; i++) dRawG[i] += r[4 + i] / gyrLsbPerDps;
+    dN++;
+  }
+  ax = (rax - P.accOfs[0]) * P.accScl[0];
+  ay = (ray - P.accOfs[1]) * P.accScl[1];
+  az = (raz - P.accOfs[2]) * P.accScl[2];
   gx = r[4] / gyrLsbPerDps * d2r - P.gbias[0];
   gy = r[5] / gyrLsbPerDps * d2r - P.gbias[1];
   gz = r[6] / gyrLsbPerDps * d2r - P.gbias[2];
@@ -437,7 +457,7 @@ static bool readRaw(float &ax, float &ay, float &az, float &gx, float &gy, float
 // ----------------------------------------------------------------------------
 static void stillReset() {
   for (uint8_t i = 0; i < 3; i++) { sAcc[i] = 0; sGyr[i] = 0; sGmin[i] = 1e9f; sGmax[i] = -1e9f; }
-  sAnMin = 99.0f; sAnMax = 0.0f; sN = 0;
+  sAnMin = 99.0f; sAnMax = 0.0f; sAnSum = 0.0f; sN = 0;
 }
 
 static void stillUpdate(float ax, float ay, float az, float gx, float gy, float gz, float an) {
@@ -451,12 +471,15 @@ static void stillUpdate(float ax, float ay, float az, float gx, float gy, float 
   }
   if (an < sAnMin) sAnMin = an;
   if (an > sAnMax) sAnMax = an;
+  sAnSum += an;
   if (++sN < STILL_WIN) return;
 
   // ---- window complete ----
   float m[3], g[3];
-  // Steadiness of |a| (not its absolute value): a cheap MPU-6050 often reads 0.95-1.05 g at rest.
-  bool still = (sAnMax - sAnMin) < STILL_ACC_PP_G && fabsf(0.5f * (sAnMax + sAnMin) - 1.0f) < STILL_ACC_ABS_G;
+  // Steadiness of |a| (not its absolute value): a cheap MPU-6050 often reads a few % off 1 g.
+  // At rest |a| is gravity, whatever the sensor says it is, so a steady window also teaches gRef.
+  float anMean = sAnSum / STILL_WIN;
+  bool still = (sAnMax - sAnMin) < STILL_ACC_PP_G && fabsf(anMean - 1.0f) < STILL_ACC_ABS_G;
   for (uint8_t i = 0; i < 3; i++) {
     m[i] = sAcc[i] / STILL_WIN;
     g[i] = sGyr[i] / STILL_WIN;
@@ -479,6 +502,11 @@ static void stillUpdate(float ax, float ay, float az, float gx, float gy, float 
   if (still) { if (sStillWindows < 255) sStillWindows++; }
   else sStillWindows = 0;
   isStill = sStillWindows >= STILL_WINDOWS;
+  if (isStill) {                       // learn the resting |a| (scale/offset error of this sensor)
+    P.gRef += GREF_ALPHA * (anMean - P.gRef);
+    if (P.gRef < 0.75f) P.gRef = 0.75f;
+    if (P.gRef > 1.25f) P.gRef = 1.25f;
+  }
 
   if (isStill && P.autoCal) {
     const float maxStep = BIAS_MAX_STEP_DPS * d2r;
@@ -507,7 +535,8 @@ static void sampleOnce(float dt) {
   wFlags |= sat;
 
   float an = sqrtf(ax * ax + ay * ay + az * az);
-  bool useAcc = (an > ACC_GATE_LO && an < ACC_GATE_HI);
+  float anRel = an / P.gRef;            // |a| relative to the learned resting value
+  bool useAcc = (anRel > ACC_GATE_LO && anRel < ACC_GATE_HI);
   if (!useAcc) wGatedN++;
   mahony(gx, gy, gz, ax, ay, az, dt, useAcc);
   stillUpdate(ax, ay, az, gx, gy, gz, an);
@@ -521,7 +550,7 @@ static void sampleOnce(float dt) {
     vib += hpOut[i] * hpOut[i];
   }
   wVibSq += vib;
-  float dev = fabsf(an - 1.0f);
+  float dev = fabsf(an - P.gRef);
   if (dev > wPeakDev) wPeakDev = dev;
 
   wAx += ax; wAy += ay; wAz += az;
@@ -565,7 +594,7 @@ static void gyroCal() {
 // ----------------------------------------------------------------------------
 // Commands (ASCII, newline terminated)
 //   PING | INFO | GYROCAL | DLPF n (0..6) | ODR n (out divider 1..50)
-//   STREAM 0|1 | DEFAULTS | REBOOT | AUTOCAL 0|1 | BIAS
+//   STREAM 0|1 | DEFAULTS | REBOOT | AUTOCAL 0|1 | BIAS | DIAG | ACC | ACCCAL ox oy oz sx sy sz | ACCCAL 0
 // ----------------------------------------------------------------------------
 static void handleCmd(char *c) {
   char out[60];
@@ -596,6 +625,37 @@ static void handleCmd(char *c) {
              lroundf(P.gbias[0] * 57295.78f), lroundf(P.gbias[1] * 57295.78f), lroundf(P.gbias[2] * 57295.78f),
              biasUpdates, isStill ? 1 : 0);
     sendText(out);
+  }
+  else if (!strcmp(c, "DIAG")) {
+    // die temperature, raw accel (mg) and raw gyro (mdps) means since the last DIAG, learned |a| at rest
+    float n = dN ? (float)dN : 1.0f;
+    snprintf(out, sizeof(out), "DIAG T=%d a=%ld %ld %ld w=%ld %ld %ld r=%d",
+             (int)lroundf(tempRaw / 34.0f + 365.3f),   // 0.1 degC
+             lroundf(dRawA[0] / n * 1000), lroundf(dRawA[1] / n * 1000), lroundf(dRawA[2] / n * 1000),
+             lroundf(dRawG[0] / n * 1000), lroundf(dRawG[1] / n * 1000), lroundf(dRawG[2] / n * 1000),
+             (int)lroundf(P.gRef * 1000));
+    for (uint8_t i = 0; i < 3; i++) dRawA[i] = dRawG[i] = 0;
+    dN = 0;
+    sendText(out);
+  }
+  else if (!strcmp(c, "ACC")) {
+    snprintf(out, sizeof(out), "ACC o=%ld %ld %ld s=%ld %ld %ld",
+             lroundf(P.accOfs[0] * 1000), lroundf(P.accOfs[1] * 1000), lroundf(P.accOfs[2] * 1000),
+             lroundf(P.accScl[0] * 10000), lroundf(P.accScl[1] * 10000), lroundf(P.accScl[2] * 10000));
+    sendText(out);
+  }
+  else if (!strncmp(c, "ACCCAL ", 7)) {
+    // ACCCAL ox oy oz sx sy sz  (offset in mg, scale in 1/10000) | ACCCAL 0 = no correction
+    long v[6]; int n = sscanf(c + 7, "%ld %ld %ld %ld %ld %ld", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]);
+    if (n == 1 && v[0] == 0) {
+      for (uint8_t i = 0; i < 3; i++) { P.accOfs[i] = 0.0f; P.accScl[i] = 1.0f; }
+    } else if (n == 6 && labs(v[0]) < 500 && labs(v[1]) < 500 && labs(v[2]) < 500 &&
+               v[3] > 7000 && v[3] < 13000 && v[4] > 7000 && v[4] < 13000 && v[5] > 7000 && v[5] < 13000) {
+      for (uint8_t i = 0; i < 3; i++) { P.accOfs[i] = v[i] / 1000.0f; P.accScl[i] = v[3 + i] / 10000.0f; }
+    } else { sendText("ERR ACCCAL args"); return; }
+    P.gRef = 1.0f;                       // relearned from the corrected readings
+    persistSave();
+    sendText("OK ACCCAL");
   }
   else sendText("ERR unknown");
 }

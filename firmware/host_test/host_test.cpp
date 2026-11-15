@@ -106,7 +106,7 @@ static int attitude(double ax, double ay, double az) {
   uint32_t end = g_us + 20000000UL;
   while (g_us < end) { g_us += 100; loop(); }
   double sp = 2 * (q0 * q2 - q3 * q1); if (sp > 1) sp = 1; if (sp < -1) sp = -1;
-  printf("q=(%.4f %.4f %.4f %.4f) A=%.1f B=%.1f\n", q0, q1, q2, q3, asin(sp) * 57.2958,
+  printf("gRef=%.3f still=%d q=(%.4f %.4f %.4f %.4f) A=%.1f B=%.1f\n", P.gRef, isStill ? 1 : 0, q0, q1, q2, q3, asin(sp) * 57.2958,
          atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2)) * 57.2958);
   return 0;
 }

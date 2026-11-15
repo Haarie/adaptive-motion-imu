@@ -52,6 +52,15 @@ ASCII lines terminated by `\n`.
 | `REBOOT` | watchdog reset |
 | `AUTOCAL 0/1` | background gyro-bias learning while still (default on). Saved. |
 | `BIAS` | current gyro bias in 0.001 °/s, number of still-window updates since boot, still flag |
+| `DIAG` | (fw 1.3) `DIAG T=<0.1 °C> a=<raw mg x y z> w=<raw mdps x y z> r=<gRef mg>`, means since the previous DIAG |
+| `ACC` | (fw 1.3) current accel calibration: `ACC o=<offset mg x y z> s=<scale 1e-4 x y z>` |
+| `ACCCAL ox oy oz sx sy sz` | (fw 1.3) set accel calibration (mg, 1e-4), saved; `ACCCAL 0` removes it. `tools/imu_cal.ps1 -AccCal` measures it |
+
+## Resting-|a| reference (fw 1.3)
+At rest the specific force *is* gravity, so whenever the rig is still the firmware learns `gRef` = the |a| this sensor
+reports at rest (20 % per still window, limited to 0.75–1.25 g, saved with the bias). The accel tilt-correction gate
+(0.9–1.1) and the impact detector work relative to `gRef`, so an uncalibrated sensor that reads e.g. 1.17 g no longer
+switches its own tilt correction off. A 6-position `ACCCAL` removes per-axis offset/scale errors on top of that.
 
 ## Background gyro-bias learning (fw 1.1, stillness test relaxed in 1.2.1)
 Every 0.5 s window is "still" when: gyro peak-to-peak < 1.5 °/s per axis, |a| varies < 0.03 g peak-to-peak (and is within 1 ± 0.15 g, since MPU-6050 scale is often a few % off), and the gravity
