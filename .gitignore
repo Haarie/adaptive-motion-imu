@@ -7,3 +7,4 @@ obj/
 enclosure/build/
 firmware/host_test/host_test
 enclosure/render/build/
+release/

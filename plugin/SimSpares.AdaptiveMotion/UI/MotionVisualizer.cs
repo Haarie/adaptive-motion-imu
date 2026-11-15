@@ -139,6 +139,7 @@ namespace SimSpares.AdaptiveMotion.UI
             if (_p.Park.MountShifted) x = Badge(dc, "MOUNT SHIFTED", x + 8, 10, Bad);
             if ((st.Flags & ImuFlags.WhoAmIUnexpected) != 0) x = Badge(dc, "CLONE IMU", x + 8, 10, Warn);
             if (_p.Logger.Active) x = Badge(dc, "● REC", x + 8, 10, Bad);
+            if (_p.PluginUpdateAvailable || _p.FirmwareUpdateAvailable) x = Badge(dc, "UPDATE", x + 8, 10, Accent);
 
         }
 

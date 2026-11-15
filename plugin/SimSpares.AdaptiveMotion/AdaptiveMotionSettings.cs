@@ -61,5 +61,10 @@ namespace SimSpares.AdaptiveMotion
         public int LogRateHz = 100;              // rows per second (max = sensor rate, 250)
         public bool LogAutoStart = false;        // start when a game starts running, stop when it stops
         public bool LogGameData = true;          // add speed, gear, rpm and the game's own accelerations
+
+        // --- updates ------------------------------------------------------------------------
+        public string UpdateRepo = "Haarie/adaptive-motion-imu";   // public GitHub repo with releases
+        public bool UpdateCheckOnStart = true;
+        public bool UpdateIncludePrerelease = false;
     }
 }

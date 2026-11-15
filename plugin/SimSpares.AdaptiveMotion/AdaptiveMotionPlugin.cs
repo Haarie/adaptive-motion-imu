@@ -29,6 +29,8 @@ namespace SimSpares.AdaptiveMotion
         internal readonly LagEstimator RollTracking = new LagEstimator();
         internal ParkMonitor Park;
         internal readonly DataLogger Logger = new DataLogger();
+        internal readonly UpdateService Updater = new UpdateService();
+        private System.Threading.CancellationTokenSource _fwCts;
         private volatile bool _gameRunning;
         // logging
         private double _nextLogSec;
@@ -95,6 +97,7 @@ namespace SimSpares.AdaptiveMotion
             Imu.Log += Note;
             Proxy.Log += Note;
             Logger.Log += Note;
+            Updater.Log += Note;
             Proxy.CommandModes += (p, r) => { _cmdPitch = (float)p; _cmdRoll = (float)r; };
             Controller.TripRaised += msg => { Note("TRIP: " + msg); this.TriggerEvent("Trip"); };
             Controller.ImpactDetected += () => { this.TriggerEvent("Impact"); LogEvent("IMPACT"); };
@@ -102,7 +105,9 @@ namespace SimSpares.AdaptiveMotion
             RegisterProperties();
             RegisterActionsAndEvents();
             ApplySettings();
-            Note("Initialised");
+            Note("Initialised, plugin " + UpdateService.InstalledPluginVersion);
+            if (Settings.UpdateCheckOnStart)
+                System.Threading.Tasks.Task.Delay(15000).ContinueWith(_ => CheckForUpdates());
         }
 
         /// <summary>(Re)start everything from Settings. Safe to call from the UI thread.</summary>
@@ -313,6 +318,12 @@ namespace SimSpares.AdaptiveMotion
             this.AttachDelegate("Proxy.Forwarded", () => Proxy.Forwarded);
             this.AttachDelegate("Proxy.Active", () => ProxyActive);
             this.AttachDelegate("LastMessage", () => _lastMessage);
+            this.AttachDelegate("Update.InstalledVersion", () => UpdateService.InstalledPluginVersion.ToString(3));
+            this.AttachDelegate("Update.LatestVersion", () => Updater.Latest?.Plugin?.Version?.ToString() ?? "");
+            this.AttachDelegate("Update.Available", () => PluginUpdateAvailable);
+            this.AttachDelegate("Update.FirmwareInstalled", () => UpdateService.ParseFirmwareVersion(_deviceInfo)?.ToString() ?? "");
+            this.AttachDelegate("Update.FirmwareLatest", () => Updater.Latest?.Firmware?.Version?.ToString() ?? "");
+            this.AttachDelegate("Update.FirmwareAvailable", () => FirmwareUpdateAvailable);
             this.AttachDelegate("Log.Active", () => Logger.Active);
             this.AttachDelegate("Log.File", () => Logger.FilePath);
             this.AttachDelegate("Log.Rows", () => Logger.Rows);
@@ -507,6 +518,71 @@ namespace SimSpares.AdaptiveMotion
             _gSway = Num(Prop(nd, "AccelerationSway"));
             _gHeave = Num(Prop(nd, "AccelerationHeave"));
         }
+
+        // ======================================================================================
+        // Updates
+        // ======================================================================================
+        public bool PluginUpdateAvailable => UpdateService.IsNewer(Updater.Latest?.Plugin?.Version, UpdateService.InstalledPluginVersion);
+        public Version FirmwareVersion => UpdateService.ParseFirmwareVersion(_deviceInfo);
+        public bool FirmwareUpdateAvailable => FirmwareVersion != null && UpdateService.IsNewer(Updater.Latest?.Firmware?.Version, FirmwareVersion);
+        public bool FirmwareUpdating => _fwCts != null;
+
+        public System.Threading.Tasks.Task CheckForUpdates() =>
+            Updater.CheckAsync(Settings.UpdateRepo, Settings.UpdateIncludePrerelease).ContinueWith(t =>
+            {
+                if (PluginUpdateAvailable) Note("Plugin update available: " + Updater.Latest.Plugin.Version + " (Update tab)");
+                if (FirmwareUpdateAvailable) Note("Firmware update available: " + Updater.Latest.Firmware.Version + " (Update tab)");
+            });
+
+        /// <summary>Starts the elevated swap helper; on success the caller closes SimHub.</summary>
+        public bool InstallPluginUpdate(bool rollback, out string error)
+        {
+            SaveSettings();
+            bool ok = rollback ? Updater.PrepareRollback(out error) : Updater.PreparePluginInstall(Updater.Latest?.Plugin, out error);
+            if (ok) Logger.Stop();
+            return ok;
+        }
+
+        /// <summary>Firmware update in the background: box into UF2 mode, copy, reconnect, confirm the version.</summary>
+        public void StartFirmwareUpdate()
+        {
+            var a = Updater.Latest?.Firmware;
+            if (a == null) { Note("No firmware in the latest release - check for updates first"); return; }
+            if (_fwCts != null) return;
+            _fwCts = new System.Threading.CancellationTokenSource();
+            var ct = _fwCts.Token;
+            var before = FirmwareVersion;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                Updater.Busy = true;
+                try
+                {
+                    Func<bool> enter = () =>
+                    {
+                        bool can = Imu.Connected && before != null && before >= new Version(1, 3, 1);
+                        if (can) { Imu.Send("BOOTLOADER"); System.Threading.Thread.Sleep(300); }
+                        Imu.Stop();
+                        return can;
+                    };
+                    string err;
+                    if (!Updater.FlashFirmware(a, enter, ct, out err)) { Imu.Start(Settings.ComPort); return; }
+                    _deviceInfo = "";
+                    Imu.Start(Settings.ComPort);
+                    var until = DateTime.UtcNow.AddSeconds(20);
+                    while (DateTime.UtcNow < until && FirmwareVersion == null) { System.Threading.Thread.Sleep(500); if (Imu.Connected) Imu.Send("INFO"); }
+                    var now = FirmwareVersion;
+                    if (now != null && !UpdateService.IsNewer(a.Version, now))
+                        Updater.Progress = "Firmware updated: " + (before?.ToString() ?? "?") + " → " + now + ". Calibration is kept.";
+                    else
+                        Updater.Progress = "Firmware written, but the box reports " + (now?.ToString() ?? "nothing yet") + ". Check the COM port in Settings.";
+                    Note(Updater.Progress);
+                }
+                catch (Exception e) { Note("Firmware update: " + e.Message); }
+                finally { Updater.Busy = false; _fwCts = null; }
+            });
+        }
+
+        public void CancelFirmwareUpdate() { try { _fwCts?.Cancel(); } catch { } }
 
         internal void Note(string msg)
         {

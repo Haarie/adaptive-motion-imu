@@ -50,6 +50,7 @@ ASCII lines terminated by `\n`.
 | `STREAM 0/1` | pause / resume IMU frames |
 | `DEFAULTS` | factory settings |
 | `REBOOT` | watchdog reset |
+| `BOOTLOADER` | (fw 1.3.1, nRF52840) restart into the UF2 bootloader: the NICENANO drive appears, copy a .uf2 onto it. Used by the plugin's Update tab |
 | `AUTOCAL 0/1` | background gyro-bias learning while still (default on). Saved. |
 | `BIAS` | current gyro bias in 0.001 °/s, number of still-window updates since boot, still flag |
 | `DIAG` | (fw 1.3) `DIAG T=<0.1 °C> a=<raw mg x y z> w=<raw mdps x y z> r=<gRef mg>`, means since the previous DIAG |

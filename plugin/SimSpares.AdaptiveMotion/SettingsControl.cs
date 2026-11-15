@@ -162,6 +162,7 @@ namespace SimSpares.AdaptiveMotion
             var tabs = new TabControl();
             tabs.Items.Add(new TabItem { Header = "Live view", Content = liveGrid });
             tabs.Items.Add(new TabItem { Header = "Settings", Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            tabs.Items.Add(new TabItem { Header = "Update", Content = BuildUpdateTab() });
             Content = tabs;
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -198,6 +199,7 @@ namespace SimSpares.AdaptiveMotion
                 double.IsNaN(_p.Park.LastDeviationDeg) ? "--" : _p.Park.LastDeviationDeg.ToString("F2", CultureInfo.InvariantCulture),
                 _p.Park.MountShifted ? "MOUNT SHIFTED" : "");
             _msg.Text = _p.LastMessage;
+            RefreshUpdateTab();
 
             var lg = _p.Logger;
             string lbl = lg.Active ? "Stop log" : "Start log";
@@ -206,6 +208,102 @@ namespace SimSpares.AdaptiveMotion
             _logStatus.Text = lg.Active
                 ? string.Format(CultureInfo.InvariantCulture, "● Recording {0:F0} s, {1} rows → {2}", lg.Seconds(IO.ImuSerialLink.NowSec), lg.Rows, lg.FilePath)
                 : (string.IsNullOrEmpty(lg.FilePath) ? "Not recording." : "Not recording. Last file: " + lg.FilePath);
+        }
+
+        // ---------------- Update tab ----------------------------------------------------------
+        private TextBlock _uPluginInstalled, _uPluginLatest, _uFwInstalled, _uFwLatest, _uProgress, _uChecked;
+        private TextBox _uNotes;
+        private Button _uCheck, _uInstall, _uRollback, _uCloseSimHub, _uFlash, _uCancelFlash, _uReleasePage;
+
+        private FrameworkElement BuildUpdateTab()
+        {
+            var s = _p.Settings;
+            var r = new StackPanel { Margin = new Thickness(12) };
+            Func<TextBlock> val = () => new TextBlock { FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+
+            r.Children.Add(Header("Plugin (SimHub)"));
+            r.Children.Add(Row("Installed version", _uPluginInstalled = val()));
+            r.Children.Add(Row("Latest version", _uPluginLatest = val()));
+            _uCheck = Btn("Check for updates", () => { _p.CheckForUpdates(); });
+            _uInstall = Btn("Download and install", () =>
+            {
+                string err;
+                if (_p.InstallPluginUpdate(false, out err)) _uCloseSimHub.Visibility = Visibility.Visible;
+                else _p.Note("Plugin update: " + err);
+            });
+            _uRollback = Btn("Roll back to previous version", () =>
+            {
+                string err;
+                if (_p.InstallPluginUpdate(true, out err)) _uCloseSimHub.Visibility = Visibility.Visible;
+                else _p.Note("Roll back: " + err);
+            });
+            _uReleasePage = Btn("Open release page", () =>
+            {
+                var url = _p.Updater.Latest?.HtmlUrl;
+                if (string.IsNullOrEmpty(url)) url = "https://github.com/" + s.UpdateRepo + "/releases";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            });
+            r.Children.Add(Buttons(_uCheck, _uInstall, _uRollback, _uReleasePage));
+            _uCloseSimHub = Btn("Close SimHub now (it restarts by itself)", () =>
+            {
+                _p.SaveSettings();
+                Application.Current.Dispatcher.BeginInvoke(new Action(() => Application.Current.Shutdown()));
+            });
+            _uCloseSimHub.Visibility = Visibility.Collapsed;
+            r.Children.Add(_uCloseSimHub);
+            r.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, Margin = new Thickness(0, 2, 0, 0),
+                Text = "Install asks once for administrator permission (the plugin lives in the SimHub folder). The new DLL is copied " +
+                       "after SimHub has closed, the old one is kept for 'Roll back', and SimHub starts again automatically." });
+
+            r.Children.Add(Header("Firmware (IMU box)"));
+            r.Children.Add(Row("Box firmware", _uFwInstalled = val()));
+            r.Children.Add(Row("Latest firmware", _uFwLatest = val()));
+            _uFlash = Btn("Update firmware", () => _p.StartFirmwareUpdate());
+            _uCancelFlash = Btn("Cancel", () => _p.CancelFirmwareUpdate());
+            r.Children.Add(Buttons(_uFlash, _uCancelFlash));
+            r.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, Margin = new Thickness(0, 2, 0, 0),
+                Text = "Rig parked and still. From firmware 1.3.1 the box restarts into update mode by itself; older firmware: double-tap " +
+                       "RST to GND when asked. The NICENANO drive appears briefly, the new firmware is copied and checked, and the box " +
+                       "reconnects. Accelerometer calibration and gyro learning are kept." });
+
+            r.Children.Add(Header("Status"));
+            r.Children.Add(_uProgress = new TextBlock { TextWrapping = TextWrapping.Wrap });
+            r.Children.Add(_uChecked = new TextBlock { Opacity = 0.75, Margin = new Thickness(0, 2, 0, 0) });
+
+            r.Children.Add(Header("Release notes"));
+            r.Children.Add(_uNotes = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+                MinHeight = 120, MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+
+            r.Children.Add(Header("Options"));
+            var repo = Txt(s.UpdateRepo, v => s.UpdateRepo = v); repo.Width = 280;
+            r.Children.Add(Row("GitHub repository (owner/name)", repo));
+            r.Children.Add(Row("Check for updates when SimHub starts", Check(s.UpdateCheckOnStart, v => { s.UpdateCheckOnStart = v; _p.SaveSettings(); })));
+            r.Children.Add(Row("Include pre-releases (test versions)", Check(s.UpdateIncludePrerelease, v => { s.UpdateIncludePrerelease = v; _p.SaveSettings(); })));
+            return new ScrollViewer { Content = r, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        private void RefreshUpdateTab()
+        {
+            if (_uPluginInstalled == null) return;
+            var u = _p.Updater; var L = u.Latest;
+            _uPluginInstalled.Text = IO.UpdateService.InstalledPluginVersion.ToString(3);
+            _uPluginLatest.Text = L?.Plugin?.Version == null ? (u.LastCheck == DateTime.MinValue ? "not checked yet" : "-")
+                : L.Plugin.Version + (_p.PluginUpdateAvailable ? "   ← update available" : "   (up to date)");
+            var fw = _p.FirmwareVersion;
+            _uFwInstalled.Text = fw == null ? (_p.Imu.Connected ? "connected, version unknown" : "box not connected") : fw.ToString();
+            _uFwLatest.Text = L?.Firmware?.Version == null ? "-" : L.Firmware.Version + (_p.FirmwareUpdateAvailable ? "   ← update available" : (fw != null ? "   (up to date)" : ""));
+            bool busy = u.Busy;
+            _uCheck.IsEnabled = !busy;
+            _uInstall.IsEnabled = !busy && _p.PluginUpdateAvailable;
+            _uRollback.IsEnabled = !busy && IO.UpdateService.HasBackup;
+            _uFlash.IsEnabled = !busy && L?.Firmware != null && !_p.FirmwareUpdating;
+            _uFlash.Content = _p.FirmwareUpdateAvailable || fw == null ? "Update firmware" : "Re-install firmware";
+            _uCancelFlash.Visibility = _p.FirmwareUpdating ? Visibility.Visible : Visibility.Collapsed;
+            _uProgress.Text = string.IsNullOrEmpty(u.LastError) || busy ? u.Progress : "Last check failed: " + u.LastError;
+            _uChecked.Text = u.LastCheck == DateTime.MinValue ? "" : "Last check " + u.LastCheck.ToString("HH:mm:ss") +
+                (L != null ? "  ·  release " + L.Tag + (L.Published > DateTime.MinValue ? " (" + L.Published.ToString("yyyy-MM-dd") + ")" : "") : "");
+            string notes = L?.Notes ?? "";
+            if (_uNotes.Text != notes) _uNotes.Text = notes;
         }
 
         private void ToggleLog()

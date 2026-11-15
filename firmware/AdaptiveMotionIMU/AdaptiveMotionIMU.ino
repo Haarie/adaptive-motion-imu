@@ -65,6 +65,8 @@
   }
   static inline void sensorPowerOn(uint8_t) {}
   #define HAS_SENSOR_POWER 0
+  #define HAS_UF2_BOOTLOADER 0
+  static inline void hwEnterBootloader() {}
 #elif defined(NRF52_SERIES) || defined(ARDUINO_ARCH_NRF52)
   #include <Watchdog.h>
   // The nRF52 WDT cannot be stopped once started. 1 s covers a flash page erase
@@ -89,6 +91,20 @@
     digitalWrite(PIN_EXT_VCC, level);
   }
   #define HAS_SENSOR_POWER 1
+  // Restart into the UF2 bootloader (NICENANO drive) so the host can copy a new .uf2: the
+  // Adafruit/nice!nano bootloader enters UF2 mode when GPREGRET = 0x57 after a soft reset.
+  #define HAS_UF2_BOOTLOADER 1
+  void nrfPrepareBootloaderResetRequest(uint8_t marker);   // ArduinoNRF core (also sets the double-reset fallback)
+  static inline void hwEnterBootloader() {
+    delay(50);                                             // let the reply leave
+    *(volatile uint32_t *)0x40027504UL = 0;                // USBD->USBPULLUP: detach from the host
+    *(volatile uint32_t *)0x40027500UL = 0;                // USBD->ENABLE
+    for (volatile uint32_t i = 0; i < 640000UL; i++) { __asm volatile ("nop"); }
+    nrfPrepareBootloaderResetRequest(0x57);                // DFU_MAGIC_UF2_RESET
+    __asm volatile ("dsb 0xF" ::: "memory");
+    *(volatile uint32_t *)0xE000ED0CUL = 0x05FA0004UL;     // SYSRESETREQ
+    for (;;) {}
+  }
 #else
   #error "Unsupported board: use the ArduinoNRF core (ProMicro nRF52840) or an AVR board"
 #endif
@@ -96,7 +112,7 @@
 // ----------------------------------------------------------------------------
 // Build configuration
 // ----------------------------------------------------------------------------
-#define FW_VERSION        "1.3.0"
+#define FW_VERSION        "1.3.1"
 #define SERIAL_BAUD       1000000UL   // ignored by native USB CDC, used on Nano
 #define MPU_ADDR          0x68        // AD0 low. 0x69 if AD0 tied high.
 #define SAMPLE_HZ         500         // internal fusion rate
@@ -618,6 +634,13 @@ static void handleCmd(char *c) {
   else if (!strncmp(c, "STREAM ", 7)) { streaming = c[7] == '1'; sendText("OK STREAM"); }
   else if (!strcmp(c, "DEFAULTS")) { persistDefaults(); persistSave(); i2cOk = mpuInit(); sendText("OK DEFAULTS"); }
   else if (!strcmp(c, "REBOOT")) { sendText("OK REBOOT"); Serial.flush(); hwReboot(); }
+  else if (!strcmp(c, "BOOTLOADER")) {
+#if HAS_UF2_BOOTLOADER
+    sendText("OK BOOTLOADER"); Serial.flush(); hwEnterBootloader();
+#else
+    sendText("ERR BOOTLOADER not supported on this board");
+#endif
+  }
   else if (!strncmp(c, "AUTOCAL ", 8)) { P.autoCal = c[8] == '1'; persistSave(); sendText(P.autoCal ? "OK AUTOCAL 1" : "OK AUTOCAL 0"); }
   else if (!strcmp(c, "BIAS")) {
     // bias in 0.001 deg/s, plus how many still windows updated it since boot
