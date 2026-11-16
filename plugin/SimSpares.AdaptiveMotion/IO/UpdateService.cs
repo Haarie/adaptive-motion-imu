@@ -253,7 +253,7 @@ namespace SimSpares.AdaptiveMotion.IO
                     UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden
                 };
                 Process.Start(psi);
-                Say("Installer ready: SimHub will close, the plugin is replaced and SimHub starts again.");
+                Say("Ready to install " + label + ": now close SimHub (button below). The plugin is replaced while SimHub is closed and SimHub starts again by itself.");
                 return true;
             }
             catch (System.ComponentModel.Win32Exception)

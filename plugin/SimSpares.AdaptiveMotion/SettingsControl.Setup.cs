@@ -26,6 +26,14 @@ namespace SimSpares.AdaptiveMotion
         // =====================================================================================
         // Setup tab
         // =====================================================================================
+        private TabItem _setupTab;
+
+        private void RebuildSetupTab()
+        {
+            _setupRefresh.Clear();
+            if (_setupTab != null) _setupTab.Content = BuildSetupTab();
+        }
+
         private FrameworkElement BuildSetupTab()
         {
             var s = _p.Settings;
@@ -63,14 +71,17 @@ namespace SimSpares.AdaptiveMotion
             // 3 ---------------------------------------------------------------------------------
             var rig = s.Rig;
             var layout = EnumBox(s.Actuators, v => s.Actuators = v);
-            root.Children.Add(Step("3. Rig dimensions and limits (copy them from SimHub's motion settings)",
+            root.Children.Add(Step("3. Rig dimensions and limits (from SimHub's motion settings)",
                 () =>
                 {
                     string pr = rig.Problem(s.Actuators, s.Packet);
                     return pr == null
-                        ? Done(string.Format(CultureInfo.InvariantCulture, "{0} actuators, stroke {1} mm, limits pitch ±{2}°, roll ±{3}°.", rig.Count, rig.StrokeMm, rig.MaxPitchDeg, rig.MaxRollDeg))
-                        : Todo("Missing: " + pr + ".");
+                        ? Done(string.Format(CultureInfo.InvariantCulture, "{0} actuators, {1} × {2} mm, stroke {3} mm, limits pitch ±{4}°, roll ±{5}° ({6}).",
+                            rig.Count, rig.WheelbaseMm, rig.TrackMm, rig.StrokeMm, rig.MaxPitchDeg, rig.MaxRollDeg, rig.Source == "SimHub" ? "imported from SimHub" : "entered by hand"))
+                        : Todo("Missing: " + pr + ". Press Import from SimHub.");
                 },
+                Buttons(Btn("Import from SimHub", () => { _p.ImportFromSimHub(false); RebuildSetupTab(); })),
+                Hint("Reads rig type, length, width, stroke, pitch/roll limits and the UDP output address from SimHub. SimHub saves its motion settings when it closes: after changing them there, restart SimHub before importing. You can still adjust the values below by hand."),
                 Row("Actuator layout", layout),
                 Row("Left-right distance between actuators (mm)", Num(rig.TrackMm, v => rig.TrackMm = v)),
                 Row("Front-rear distance between actuators (mm)", Num(rig.WheelbaseMm, v => rig.WheelbaseMm = v)),

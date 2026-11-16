@@ -162,7 +162,7 @@ namespace SimSpares.AdaptiveMotion
             var tabs = _tabs = new TabControl();
             bool firstRun = !s.SetupWizardSeen;
             var liveTab = new TabItem { Header = "Live view", Content = liveGrid };
-            var setupTab = new TabItem { Header = "Setup", Content = BuildSetupTab() };
+            var setupTab = _setupTab = new TabItem { Header = "Setup", Content = BuildSetupTab() };
             _verifyTab = new TabItem { Header = "Verify", Content = BuildVerifyTab() };
             tabs.Items.Add(liveTab);
             tabs.Items.Add(setupTab);

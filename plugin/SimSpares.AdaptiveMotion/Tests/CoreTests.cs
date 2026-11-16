@@ -28,6 +28,7 @@ static class CoreTests
         AlignTests();
         GeometryTests();
         VerifyTests();
+        ImportTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -531,5 +532,25 @@ static class CoreTests
         Check(rep.Passed && rep.ValidFor("abc") && !rep.ValidFor("abd"), "report is tied to the settings fingerprint");
         var geo = new RigGeometry { TrackMm = 660 }; var f1 = VerificationReport.Fingerprint(geo, 1.0); geo.TrackMm = 661;
         Check(f1 != VerificationReport.Fingerprint(geo, 1.0), "fingerprint changes when the geometry changes");
+    }
+    static void ImportTests()
+    {
+        string json = "\uFEFF{\"Devices\":[{\"Name\":\"Rig\",\"IsEnabled\":true,\"Geometry\":{\"TypeName\":\"GenericGeometry3Dof4Linear\",\"BaseGeometry\":{\"Settings\":{"
+            + "\"RigLength\":1250.0,\"RigWidth\":660.0,\"RigWidthFront\":600.0,\"SeparateWidth\":false,\"ActuatorsStroke\":200.0,\"CustomCenterOfRotation\":false,"
+            + "\"CenterOfRotationRightOffset\":0.0,\"CenterOfRotationFrontOffset\":0.0,\"AxisLimitingSettings\":{\"RollLimit\":{\"Enabled\":true,\"Limit\":5.0},"
+            + "\"FrontPitchLimit\":{\"Enabled\":true,\"Limit\":6.0},\"RearPitchLimit\":{\"Enabled\":true,\"Limit\":5.0}},\"Note\":\"a \\\"quoted\\\" \\u00e9\"},"
+            + "\"TypeName\":\"Geometry3Dof4Linear\"}},\"OutputEx\":{\"AggregatedOutputs\":[{\"Output\":{\"TypeName\":\"GenericUDPOutputV2\",\"Settings\":{\"TargetIPAddress\":\"192.168.50.1\",\"TargetPort\":4444}}}]},"
+            + "\"Profiles\":[],\"X\":[1,-2.5e-3,null,NaN]}]}";
+        var r = SimHubMotionImport.FromJson(json, new DateTime(2026, 11, 16, 20, 28, 0));
+        Check(r.Ok && r.Layout == ActuatorLayout.FourCorner && r.LengthMm == 1250 && r.WidthMm == 660 && r.StrokeMm == 200, "SimHub 3DOF/4 linear geometry imported: " + r.Error);
+        Check(r.RollLimitDeg == 5 && r.PitchLimitDeg == 5 && r.Notes.Any(n => n.Contains("smaller")), "pitch limit = smaller of front/rear");
+        Check(r.OutputHost == "192.168.50.1" && r.OutputPort == 4444, "UDP output target imported");
+        var g = new RigGeometry(); r.ApplyTo(g);
+        Check(g.Problem(r.Layout, new PacketLayout { AxisCount = 4 }) == null && g.ActuatorX[0] == 625 && g.ActuatorY[1] == -330 && g.Source == "SimHub", "import fills a complete rig");
+        Check(r.Differences(g, ActuatorLayout.FourCorner).Count == 0, "no differences right after import");
+        g.StrokeMm = 225;
+        Check(r.Differences(g, ActuatorLayout.FourCorner).Any(d => d.Contains("stroke")), "a changed stroke is detected");
+        var bad = SimHubMotionImport.FromJson("{\"Devices\":[{\"Geometry\":{\"BaseGeometry\":{\"TypeName\":\"Geometry6DofStewart\",\"Settings\":{}}}}]}", DateTime.Now);
+        Check(!bad.Ok && bad.Error.Contains("not supported"), "unsupported rig type is reported");
     }
 }

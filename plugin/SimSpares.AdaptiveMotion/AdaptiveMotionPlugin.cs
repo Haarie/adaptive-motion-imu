@@ -112,6 +112,7 @@ namespace SimSpares.AdaptiveMotion
             RegisterProperties();
             RegisterActionsAndEvents();
             ApplySettings();
+            CheckSimHubMotionAtStart();
             Note("Initialised, plugin " + UpdateService.InstalledPluginVersion);
             if (Settings.UpdateCheckOnStart)
                 System.Threading.Tasks.Task.Delay(15000).ContinueWith(_ => CheckForUpdates());
@@ -315,6 +316,55 @@ namespace SimSpares.AdaptiveMotion
                 s.Rig.Pose(s.Rig.ValuesToHeights(xf.LastAxes, neutral, s.Packet.MaxValue), out pitchDeg, out rollDeg, out _);
             }
             catch { pitchDeg = rollDeg = double.NaN; }
+        }
+
+        // ======================================================================================
+        // SimHub motion settings import
+        // ======================================================================================
+        public static string SimHubMotionSettingsPath =>
+            System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PluginsData", "Common", "MotionPlugin.GeneralSettingsV2.json");
+
+        public SimHubMotionImport ReadSimHubMotion()
+        {
+            string f = SimHubMotionSettingsPath;
+            if (!System.IO.File.Exists(f)) return new SimHubMotionImport { Error = "SimHub's motion settings file was not found (" + f + ")" };
+            try { return SimHubMotionImport.FromJson(System.IO.File.ReadAllText(f), System.IO.File.GetLastWriteTime(f)); }
+            catch (Exception e) { return new SimHubMotionImport { Error = "reading SimHub's motion settings failed: " + e.Message }; }
+        }
+
+        /// <summary>Fill rig dimensions, stroke, limits and the controller address from SimHub's motion settings.</summary>
+        public bool ImportFromSimHub(bool quiet)
+        {
+            var r = ReadSimHubMotion();
+            if (!r.Ok) { if (!quiet) Note("Import from SimHub: " + r.Error); return false; }
+            var s = Settings;
+            s.Actuators = r.Layout;
+            r.ApplyTo(s.Rig);
+            if (s.Packet.AxisCount < s.Rig.Count) s.Packet.AxisCount = s.Rig.Count;
+            bool local = r.OutputHost == "127.0.0.1" || r.OutputHost.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+            if (r.OutputHost != "" && !local) { s.ProxyTargetHost = r.OutputHost; s.ProxyTargetPort = r.OutputPort; }
+            SaveSettings();
+            ApplySettings();
+            var msg = "Imported from " + r.Summary() + ".";
+            if (local && r.OutputPort == s.ProxyListenPort) msg += " SimHub already sends to the plugin.";
+            if (r.Notes.Count > 0) msg += " " + string.Join(" ", r.Notes);
+            msg += " Changed something in SimHub's motion settings? Restart SimHub first: it saves them when it closes.";
+            Note(msg);
+            return true;
+        }
+
+        /// <summary>At start: fill an empty rig from SimHub, or warn when SimHub's values changed since.</summary>
+        private void CheckSimHubMotionAtStart()
+        {
+            try
+            {
+                if (Settings.Rig.Count == 0) { ImportFromSimHub(true); return; }
+                var r = ReadSimHubMotion();
+                if (!r.Ok || Settings.Rig.Source != "SimHub") return;
+                var diff = r.Differences(Settings.Rig, Settings.Actuators);
+                if (diff.Count > 0) Note("SimHub's motion settings differ from the plugin (" + string.Join(", ", diff) + "): open Setup step 3 and press Import from SimHub, then verify again.");
+            }
+            catch (Exception e) { Note("SimHub motion settings check: " + e.Message); }
         }
 
         /// <summary>Copy the SimHub limits into the plugin's own envelope (gain reduction starts there, trips a bit beyond).</summary>
