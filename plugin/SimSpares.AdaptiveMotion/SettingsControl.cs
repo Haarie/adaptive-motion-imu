@@ -257,6 +257,13 @@ namespace SimSpares.AdaptiveMotion
                 _p.SaveSettings();
                 Application.Current.Dispatcher.BeginInvoke(new Action(() => Application.Current.Shutdown()));
             });
+            // Sim-Spares green with carbon text, so the last step of an update stands out
+            _uCloseSimHub.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xA6, 0xFF, 0x4D));
+            _uCloseSimHub.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x0A, 0x0C, 0x0B));
+            _uCloseSimHub.BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x7A, 0x29));
+            _uCloseSimHub.BorderThickness = new Thickness(2);
+            _uCloseSimHub.FontWeight = FontWeights.Bold;
+            _uCloseSimHub.Padding = new Thickness(14, 6, 14, 6);
             _uCloseSimHub.Visibility = Visibility.Collapsed;
             r.Children.Add(_uCloseSimHub);
             r.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, Margin = new Thickness(0, 2, 0, 0),
