@@ -23,6 +23,7 @@ namespace SimSpares.AdaptiveMotion.Core
         public double CrossTalkMaxDeg = 0.5;           // the other axis must stay within this
         public double AbortOvershootDeg = 3;           // abort when the seat goes this far past the limit
         public double AbortWrongWayDeg = 2;            // abort when the seat moves this far the WRONG way
+        public double HoldSec = 5;                     // keep the rig at centre this long after the test, then hand it back
 
         public VerifyOptions Clone() { var o = (VerifyOptions)MemberwiseClone(); o.Fractions = (double[])Fractions.Clone(); return o; }
     }

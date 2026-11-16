@@ -241,6 +241,7 @@ namespace SimSpares.AdaptiveMotion
             opts.Children.Add(Inline("Largest pose (% of limit)", Num(o.MaxFractionPct, v => { o.MaxFractionPct = Math.Max(10, Math.Min(100, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Speed (deg/s)", Num(o.RampDps, v => { o.RampDps = Math.Max(0.5, Math.Min(15, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Tolerance (%)", Num(o.TolPct, v => { o.TolPct = Math.Max(1, Math.Min(20, v)); _p.SaveSettings(); })));
+            opts.Children.Add(Inline("Hold at centre after test (s)", Num(o.HoldSec, v => { o.HoldSec = Math.Max(0, Math.Min(60, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Min tolerance (deg)", Num(o.TolMinDeg, v => { o.TolMinDeg = Math.Max(0.1, Math.Min(2, v)); _p.SaveSettings(); })));
             top.Children.Add(opts);
             _vBlockers = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = TodoBrush, Margin = new Thickness(0, 4, 0, 4) };

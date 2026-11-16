@@ -63,6 +63,8 @@ namespace SimSpares.AdaptiveMotion
         private VerificationRun _lastRun;              // last finished/aborted test, for the Verify tab
         private volatile bool _verifyDone;
         private double[] _verifyNeutral;
+        private double _verifyDoneSec = double.NaN;
+        private volatile bool _verifyHoldEnd;
         private string _fingerprint; private double _fingerprintSec = double.NaN;
 
         public PlatformState State { get { lock (_stateLock) return _state; } }
@@ -224,6 +226,8 @@ namespace SimSpares.AdaptiveMotion
                     _verifyNeutral = (double[])Settings.Neutral.Clone();
                     _verifyRun = new VerificationRun(Settings.Rig.MaxPitchDeg, Settings.Rig.MaxRollDeg, Settings.Verify.Clone());
                     _verifyDone = false;
+                    _verifyDoneSec = double.NaN;
+                    _verifyHoldEnd = false;
                 }
                 Proxy.BeginOverride(VerifyTick);
                 LogEvent("VERIFY START");
@@ -243,7 +247,12 @@ namespace SimSpares.AdaptiveMotion
 
         public void StopVerification(string reason = "stopped by user")
         {
-            lock (VerifyLock) _verifyRun?.RequestStop(reason);
+            lock (VerifyLock)
+            {
+                if (_verifyRun == null) return;
+                if (_verifyRun.Done) _verifyHoldEnd = true;   // already back at centre: end the hold now
+                else _verifyRun.RequestStop(reason);
+            }
         }
 
         // Called by the proxy's test sender every 10 ms: advance the run and return the actuator values to send.
@@ -256,7 +265,14 @@ namespace SimSpares.AdaptiveMotion
                 var st = State;
                 bool fresh = SensorFresh;
                 run.Update(ImuSerialLink.NowSec, fresh ? st.PitchDeg : double.NaN, fresh ? st.RollDeg : double.NaN);
-                if (run.Done) _verifyDone = true;
+                if (run.Done)
+                {
+                    // Hold the rig at centre for a moment before handing it back (with SimHub idle,
+                    // the controller parks the rig when the packets stop).
+                    double now = ImuSerialLink.NowSec;
+                    if (double.IsNaN(_verifyDoneSec)) _verifyDoneSec = now;
+                    if (_verifyHoldEnd || now - _verifyDoneSec >= run.Options.HoldSec) _verifyDone = true;
+                }
                 var rig = Settings.Rig;
                 return rig.HeightsToValues(rig.HeightsMm(run.CommandPitchDeg, run.CommandRollDeg), _verifyNeutral, Settings.Packet.MaxValue);
             }
