@@ -96,12 +96,26 @@ namespace SimSpares.AdaptiveMotion.IO
                     Say("Checking " + repo + (includePrerelease ? " (beta channel)" : "") + " …");
                     var js = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 };
                     Dictionary<string, object> man;
-                    using (var wc = Client())
+                    string body = null;
+                    // GitHub's contents API is not CDN-cached, so a release shows up immediately; raw.githubusercontent.com
+                    // (cached up to 5 minutes) is the fallback when the API is unavailable or rate-limited.
+                    try
                     {
-                        wc.Headers[HttpRequestHeader.Accept] = "application/json";
-                        wc.Headers[HttpRequestHeader.CacheControl] = "no-cache";
-                        man = js.Deserialize<Dictionary<string, object>>(wc.DownloadString(url + "?t=" + DateTime.UtcNow.Ticks));
+                        using (var wc = Client())
+                        {
+                            wc.Headers[HttpRequestHeader.Accept] = "application/vnd.github.raw";
+                            body = wc.DownloadString("https://api.github.com/repos/" + repo.Trim().Trim('/') + "/contents/updates/" + (includePrerelease ? "beta" : "stable") + "/manifest.json?ref=main");
+                        }
                     }
+                    catch { body = null; }
+                    if (string.IsNullOrEmpty(body) || body.TrimStart()[0] != '{')
+                        using (var wc = Client())
+                        {
+                            wc.Headers[HttpRequestHeader.Accept] = "application/json";
+                            wc.Headers[HttpRequestHeader.CacheControl] = "no-cache";
+                            body = wc.DownloadString(url + "?t=" + DateTime.UtcNow.Ticks);
+                        }
+                    man = js.Deserialize<Dictionary<string, object>>(body);
                     var baseUri = new Uri(url);
                     var info = new ReleaseInfo
                     {
