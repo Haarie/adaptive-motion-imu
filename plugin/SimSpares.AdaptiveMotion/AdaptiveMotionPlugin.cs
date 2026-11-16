@@ -956,21 +956,4 @@ namespace SimSpares.AdaptiveMotion
         }
     }
 
-    internal static class MenuIcon
-    {
-        private static ImageSource _icon;
-        public static ImageSource Create()
-        {
-            if (_icon != null) return _icon;
-            // A tilted seat line over a level line: drawn, so no resource file is needed
-            var g = new GeometryGroup();
-            g.Children.Add(Geometry.Parse("M2,20 L22,20"));
-            g.Children.Add(Geometry.Parse("M4,15 L20,9"));
-            g.Children.Add(Geometry.Parse("M12,12 L12,20"));
-            var d = new GeometryDrawing(null, new Pen(Brushes.White, 2), g);
-            var img = new DrawingImage(d);
-            img.Freeze();
-            return _icon = img;
-        }
-    }
 }

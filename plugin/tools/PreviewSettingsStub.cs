@@ -6,4 +6,5 @@ namespace SimSpares.AdaptiveMotion
     {
         public SettingsControl(AdaptiveMotionPlugin p) { }
     }
+    internal static class MenuIcon { public static System.Windows.Media.ImageSource Create() => null; }
 }
