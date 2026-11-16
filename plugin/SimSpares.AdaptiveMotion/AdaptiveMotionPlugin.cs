@@ -141,10 +141,11 @@ namespace SimSpares.AdaptiveMotion
             {
                 try
                 {
-                    _otherNoted = false;
+                    _otherNoted = false; _templateSaved = false;
                     var xf = new MotionPacketTransformer(Settings.Packet, Settings.Actuators, Settings.Neutral);
                     Proxy.Start(Settings.ProxyListenPort, Settings.ProxyTargetHost, Settings.ProxyTargetPort, xf,
                                 () => Controller.Snapshot, () => ProxyActive);
+                    Proxy.SeedTemplate(SavedOrSynthesizedTemplate());
                 }
                 catch (Exception e) { Note("Proxy: " + e.Message); }
             }
@@ -192,9 +193,11 @@ namespace SimSpares.AdaptiveMotion
             if (geo != null) b.Add(geo);
             if (s.Mode != ApplyMode.UdpProxy) b.Add("set the mode to UDP proxy (the test drives the rig through the proxy)");
             else if (!Proxy.Running) b.Add("the UDP proxy is not running: check the controller host/port and Save & apply");
-            else if (!Proxy.HasTemplate || double.IsNaN(Proxy.LastPacketSec) || ImuSerialLink.NowSec - Proxy.LastPacketSec > 2)
-                b.Add("no motion packets from SimHub: point SimHub's output at 127.0.0.1:" + s.ProxyListenPort + " and switch motion on");
-            if (s.Neutral == null) b.Add("capture the actuator neutral (motion on, game idle)");
+            else if (!Proxy.HasTemplate)
+                b.Add("the packet format is not known yet: start SimHub motion once (a game or SimHub's motion test) with SimHub sending to 127.0.0.1:" + s.ProxyListenPort);
+            else if (!double.IsNaN(Proxy.LastPacketSec) && ImuSerialLink.NowSec - Proxy.LastPacketSec < 1 && !Verifying)
+                b.Add("SimHub is sending motion right now: stop the game / motion test so only the test drives the rig");
+            if (s.Neutral == null) b.Add("set the neutral (Setup step 5: Use centre)");
             if (_gameRunning) b.Add("stop the game: the test only runs with the game closed or idle in the menu");
             if (geo == null && s.Neutral != null && s.Neutral.Length >= s.Rig.Count)
             {
@@ -360,6 +363,70 @@ namespace SimSpares.AdaptiveMotion
             return true;
         }
 
+        /// <summary>The last real SimHub motion packet (saved), or one built from the format, or null.</summary>
+        public byte[] SavedOrSynthesizedTemplate()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(Settings.PacketTemplate))
+                {
+                    var t = Convert.FromBase64String(Settings.PacketTemplate);
+                    if (MotionPacketCodec.IsMotionPacket(Settings.Packet, t, t.Length)) return t;
+                }
+            }
+            catch { }
+            return MotionPacketCodec.Synthesize(Settings.Packet);
+        }
+
+        /// <summary>True once SimHub's packets have matched the format (this session or saved earlier).</summary>
+        public bool RouteConfirmed
+        {
+            get
+            {
+                var xf = Proxy.Transformer;
+                if (xf != null && xf.MotionPackets > 0) return true;
+                try
+                {
+                    if (string.IsNullOrEmpty(Settings.PacketTemplate)) return false;
+                    var t = Convert.FromBase64String(Settings.PacketTemplate);
+                    return MotionPacketCodec.IsMotionPacket(Settings.Packet, t, t.Length);
+                }
+                catch { return false; }
+            }
+        }
+
+        private bool _templateSaved;
+        private void SaveTemplateOnce()
+        {
+            var xf = Proxy.Transformer;
+            if (_templateSaved || xf == null || xf.MotionPackets == 0 || Verifying) return;
+            var t = Proxy.TemplateCopy;
+            if (t == null || !MotionPacketCodec.IsMotionPacket(Settings.Packet, t, t.Length)) return;
+            _templateSaved = true;
+            Settings.PacketTemplate = Convert.ToBase64String(t);
+            SaveSettings();
+        }
+
+        /// <summary>
+        /// Neutral = centre of the output range for the rig's actuators (where SimHub puts them at zero motion);
+        /// other axes keep the value SimHub sends for them.
+        /// </summary>
+        public void UseCentreNeutral()
+        {
+            var l = Settings.Packet;
+            var n = MotionPacketTransformer.DefaultNeutral(l);
+            var t = SavedOrSynthesizedTemplate();
+            if (t != null)
+            {
+                var axes = new double[l.AxisCount];
+                try { MotionPacketCodec.Decode(l, t, axes); for (int i = Math.Max(1, Settings.Rig.Count); i < n.Length; i++) n[i] = axes[i]; } catch { }
+            }
+            Settings.Neutral = n;
+            SaveSettings();
+            ApplySettings();
+            Note("Neutral set to the centre of the range: " + string.Join(", ", Array.ConvertAll(n, v => v.ToString("F0"))));
+        }
+
         /// <summary>Take the packet format from the last packet SimHub sent that did not match the current format.</summary>
         public bool DetectPacketFormat(out string message)
         {
@@ -491,6 +558,7 @@ namespace SimSpares.AdaptiveMotion
             if (Verifying && !Proxy.Running) { lock (VerifyLock) { _lastRun = _verifyRun; _verifyRun = null; } Note("Verification stopped: the proxy stopped"); }
             FinishVerificationIfDone();
             NoteUnknownPackets();
+            SaveTemplateOnce();
             if (Settings.LogAutoStart)
             {
                 if (_gameRunning && !wasRunning && !Logger.Active) { StartLog(); _autoLogging = true; }

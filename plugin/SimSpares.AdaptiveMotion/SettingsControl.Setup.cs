@@ -104,10 +104,14 @@ namespace SimSpares.AdaptiveMotion
                     if (xf != null && xf.MotionPackets == 0 && xf.OtherPackets > 0 && fresh)
                         return Bad("SimHub's packets arrive, but they do not match the packet format. Expected: " + s.Packet.Describe() + ". Received: "
                                    + (xf.LastOtherSample ?? "?") + ". Press Detect format (or Import from SimHub in step 3). Motion still passes through unchanged.");
-                    if (xf == null || xf.MotionPackets == 0 || !fresh)
-                        return Todo(string.Format(CultureInfo.InvariantCulture, "In SimHub's Generic UDP output, send to 127.0.0.1 port {0} and switch motion on. No packets yet.", s.ProxyListenPort));
-                    return Done(string.Format(CultureInfo.InvariantCulture, "Receiving SimHub motion ({0}) and forwarding to {1}:{2}. {3}",
-                        s.Packet.Describe(), s.ProxyTargetHost, s.ProxyTargetPort, _p.ProxyActive ? "Closed loop ACTIVE." : "Passing through unchanged."));
+                    string route = string.Format(CultureInfo.InvariantCulture, "Plugin listens on 127.0.0.1:{0} and forwards to {1}:{2}; packet format {3}. ",
+                        s.ProxyListenPort, s.ProxyTargetHost, s.ProxyTargetPort, s.Packet.Describe());
+                    if (xf != null && xf.MotionPackets > 0 && fresh)
+                        return Done(route + "Receiving SimHub motion now. " + (_p.ProxyActive ? "Closed loop ACTIVE." : "Passing through unchanged."));
+                    if (_p.RouteConfirmed)
+                        return Done(route + "SimHub's packets were received earlier. SimHub only sends while motion runs (game or motion test); nothing in idle is normal.");
+                    return Todo(route + "Not confirmed yet: make sure SimHub's Generic UDP output sends to 127.0.0.1:" + s.ProxyListenPort +
+                                ", then start a game or SimHub's motion test for a moment. SimHub sends nothing in idle, so 'no packets' is normal until motion runs.");
                 },
                 Row("Controller host", Txt(s.ProxyTargetHost, v => s.ProxyTargetHost = v)),
                 Row("Controller port (SimHub's old target port)", IntBox(s.ProxyTargetPort, v => s.ProxyTargetPort = v)),
@@ -120,17 +124,20 @@ namespace SimSpares.AdaptiveMotion
                      "Current: " + s.Packet.Describe() + ".")));
 
             // 5 ---------------------------------------------------------------------------------
-            root.Children.Add(Step("5. Neutral and level (rig parked at its centre, motion on, game closed)",
+            root.Children.Add(Step("5. Neutral and level (rig at its centre, game closed)",
                 () =>
                 {
-                    if (s.Neutral == null && !s.LevelCaptured) return Todo("Capture the actuator neutral, then the level.");
-                    if (s.Neutral == null) return Todo("Capture the actuator neutral.");
+                    if (s.Neutral == null && !s.LevelCaptured) return Todo("Set the neutral (Use centre), then capture the level.");
+                    if (s.Neutral == null) return Todo("Set the neutral: press Use centre.");
                     if (!s.LevelCaptured) return Todo("Capture the level.");
                     return Done(string.Format(CultureInfo.InvariantCulture, "Neutral {0}; level pitch {1:F2}°, roll {2:F2}°.",
                         string.Join(" / ", s.Neutral.Select(v => v.ToString("F0", CultureInfo.InvariantCulture))), s.LevelPitchDeg, s.LevelRollDeg));
                 },
-                Buttons(Btn("Capture neutral", () => _p.StartNeutralCapture()),
-                        Btn("Capture level", () => _p.StartLevelCapture()))));
+                Buttons(Btn("Use centre for neutral (recommended)", () => _p.UseCentreNeutral()),
+                        Btn("Capture neutral from SimHub", () => _p.StartNeutralCapture()),
+                        Btn("Capture level", () => _p.StartLevelCapture())),
+                Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
+                     "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still).")));
 
             // 6 ---------------------------------------------------------------------------------
             root.Children.Add(Step("6. Verify: commanded vs measured",

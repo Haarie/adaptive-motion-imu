@@ -37,6 +37,10 @@ namespace SimSpares.AdaptiveMotion.IO
         public long Injected { get; private set; }
         public bool Injecting => _override != null;
         public bool HasTemplate { get { lock (_tplLock) return _template != null; } }
+        public byte[] TemplateCopy { get { lock (_tplLock) return _template == null ? null : (byte[])_template.Clone(); } }
+
+        /// <summary>Use a saved or synthesized packet as template until SimHub sends a real one.</summary>
+        public void SeedTemplate(byte[] t) { if (t == null) return; lock (_tplLock) if (_template == null) _template = (byte[])t.Clone(); }
 
         /// <summary>
         /// Start sending the axis values returned by <paramref name="axes"/> every 10 ms instead of SimHub's
@@ -46,7 +50,7 @@ namespace SimSpares.AdaptiveMotion.IO
         public void BeginOverride(Func<double[]> axes)
         {
             if (!_run) throw new InvalidOperationException("proxy is not running");
-            if (!HasTemplate) throw new InvalidOperationException("no motion packet from SimHub yet: switch SimHub motion output on");
+            if (!HasTemplate) throw new InvalidOperationException("the packet format is not known yet: start SimHub motion once (a game or SimHub's motion test) so the plugin sees one packet");
             EndOverride();
             _override = axes;
             _injector = new Thread(Inject) { IsBackground = true, Name = "AdaptiveMotion.Test", Priority = ThreadPriority.Highest };

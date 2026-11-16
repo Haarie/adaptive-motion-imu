@@ -156,6 +156,19 @@ namespace SimSpares.AdaptiveMotion.Core
             return sb.ToString().TrimEnd() + (len > 40 ? " …" : "") + " (" + len + " bytes)";
         }
 
+        /// <summary>A packet for this layout without having seen one (text layouts, or binary without header/trailer).</summary>
+        public static byte[] Synthesize(PacketLayout l)
+        {
+            if (l.Text)
+            {
+                var sb = new StringBuilder();
+                if (l.TextPrefix != "") sb.Append(l.TextPrefix).Append(',');
+                for (int i = 0; i < l.AxisCount; i++) { if (i > 0) sb.Append(','); sb.Append('0'); }
+                return Encoding.ASCII.GetBytes(sb.ToString());
+            }
+            return l.HeaderBytes == 0 && l.TrailerBytes == 0 ? new byte[l.MotionPacketLength] : null;
+        }
+
         /// <summary>Build a packet with new axis values, using <paramref name="template"/> for everything else.</summary>
         public static byte[] Build(PacketLayout l, double[] axes, byte[] template, int len)
         {

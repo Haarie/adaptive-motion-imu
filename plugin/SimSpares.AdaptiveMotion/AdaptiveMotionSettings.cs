@@ -57,6 +57,7 @@ namespace SimSpares.AdaptiveMotion
         public VerifyOptions Verify = new VerifyOptions { MaxFractionPct = 50 };   // first runs at half the limits; set 100 % once it looks right
         public VerificationReport LastVerification = null;   // closed loop only while this passed and still matches the settings
         public bool SetupWizardSeen = false;
+        public string PacketTemplate = "";                   // last SimHub motion packet (base64): lets the test run while SimHub is idle
 
         // --- SimHub gain-event mode ---------------------------------------------------------
         public double SimHubGainStepPct = 5.0;   // must match one step of SimHub's gain control

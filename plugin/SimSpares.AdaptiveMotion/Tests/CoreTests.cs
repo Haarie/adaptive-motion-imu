@@ -588,6 +588,10 @@ static class CoreTests
         var rebuilt = MotionPacketCodec.Build(dh, new double[] { 32768, 1, 161 }, hx, hx.Length);
         Check(Str(rebuilt) == "M,8000,1,00A1\r\n", "hex values, zero padding and line end kept: " + Str(rebuilt).TrimEnd());
         Check(MotionPacketCodec.DetectText(new byte[] { 0x7F, 0xFF, 0x00, 0x10 }, 4, 65535) == null, "binary packet is not text");
+        var syn = MotionPacketCodec.Synthesize(l);
+        Check(MotionPacketCodec.IsMotionPacket(l, syn, syn.Length) && Str(MotionPacketCodec.Build(l, new double[] { 32767, 32767, 32767, 32767, 0, 0, 0, 0, 0, 0 }, syn, syn.Length)) == "NULLCAT,32767,32767,32767,32767,0,0,0,0,0,0",
+              "test packets can be built without SimHub sending (idle)");
+        Check(MotionPacketCodec.Synthesize(new PacketLayout { HeaderBytes = 1 }) == null, "binary with header needs a real packet first");
 
         string json = "{\"Devices\":[{\"IsEnabled\":true,\"Geometry\":{\"BaseGeometry\":{\"TypeName\":\"Geometry3Dof4Linear\",\"Settings\":{\"RigLength\":1250,\"RigWidth\":660,\"ActuatorsStroke\":200}}},"
             + "\"OutputEx\":{\"AggregatedOutputs\":[{\"Output\":{\"TypeName\":\"GenericUDPOutputV2\",\"Settings\":{\"TargetIPAddress\":\"192.168.50.1\",\"TargetPort\":4444,"
