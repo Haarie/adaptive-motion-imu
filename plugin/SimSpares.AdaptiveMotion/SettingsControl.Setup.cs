@@ -217,6 +217,9 @@ namespace SimSpares.AdaptiveMotion
             warn.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF5, 0xF1)), Margin = new Thickness(0, 4, 0, 0),
                 Text = "The test moves the rig on its own and does not react to a person in the seat. Before you press Run test: the seat is empty, " +
                        "nobody is within reach of the moving parts, and the e-stop is within your reach. Stop returns the rig to centre; use the e-stop if anything looks wrong." });
+            warn.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF5, 0xF1)), Margin = new Thickness(0, 6, 0, 0),
+                Text = "After the test the rig stays at centre for a few seconds (Hold at centre after test) and then moves to its PARK position: " +
+                       "SimHub sends no motion while idle, so the controller parks the rig. Stay clear until it has stopped moving." });
             top.Children.Add(new Border { Child = warn, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 0, 0, 6), CornerRadius = new CornerRadius(2),
                 BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x29)), Background = new SolidColorBrush(Color.FromRgb(0x17, 0x1B, 0x19)) });
 
@@ -240,7 +243,9 @@ namespace SimSpares.AdaptiveMotion
                 }
                 if (MessageBox.Show("The plugin will now move the rig through pitch and roll poses up to " +
                         string.Format(CultureInfo.InvariantCulture, "±{0:F1}° pitch and ±{1:F1}° roll", s.Rig.MaxPitchDeg * Math.Min(1, o.MaxFractionPct / 100), s.Rig.MaxRollDeg * Math.Min(1, o.MaxFractionPct / 100)) +
-                        ".\n\nSAFETY: nobody may sit in the rig during the test. Check that the seat is empty and nobody is within reach of the moving parts. Stay next to the rig with the e-stop within reach. Stop returns the rig to centre.\n\nIs the rig empty and clear? Start the test?",
+                        ".\n\nSAFETY: nobody may sit in the rig during the test. Check that the seat is empty and nobody is within reach of the moving parts. Stay next to the rig with the e-stop within reach. Stop returns the rig to centre.\n\n" +
+                        string.Format(CultureInfo.InvariantCulture, "After the test the rig holds at centre for {0:F0} s and then moves to its park position (the controller parks it when the test stops sending). Stay clear until it has stopped moving.", o.HoldSec) +
+                        "\n\nIs the rig empty and clear? Start the test?",
                         "Adaptive Motion: verification", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
                 if (!_p.StartVerification(out var why))
                 {
