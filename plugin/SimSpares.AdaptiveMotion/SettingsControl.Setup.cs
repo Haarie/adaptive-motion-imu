@@ -17,7 +17,7 @@ namespace SimSpares.AdaptiveMotion
         private TabControl _tabs;
         private TabItem _verifyTab;
         private TextBlock _vBlockers, _vFindings;
-        private Button _vRun, _vStop;
+        private Button _vRun, _vStop, _vRange;
 
         private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0x3F, 0xB9, 0x50));
         private static readonly Brush TodoBrush = new SolidColorBrush(Color.FromRgb(0xE3, 0xB3, 0x41));
@@ -210,6 +210,25 @@ namespace SimSpares.AdaptiveMotion
             var dock = new DockPanel { Margin = new Thickness(8) };
 
             var top = new StackPanel();
+            // Safety banner: the test drives the rig by itself
+            var warn = new StackPanel();
+            warn.Children.Add(new TextBlock { Text = "⚠  SAFETY: NOBODY IN THE RIG DURING THE TEST", FontWeight = FontWeights.Bold, FontSize = 15,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x29)) });
+            warn.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF5, 0xF1)), Margin = new Thickness(0, 4, 0, 0),
+                Text = "The test moves the rig on its own and does not react to a person in the seat. Before you press Run test: the seat is empty, " +
+                       "nobody is within reach of the moving parts, and the e-stop is within your reach. Stop returns the rig to centre; use the e-stop if anything looks wrong." });
+            top.Children.Add(new Border { Child = warn, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 0, 0, 6), CornerRadius = new CornerRadius(2),
+                BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x29)), Background = new SolidColorBrush(Color.FromRgb(0x17, 0x1B, 0x19)) });
+
+            _vRange = Btn("", () =>
+            {
+                o.MaxFractionPct = o.MaxFractionPct >= 99 ? 50 : 100;
+                _p.SaveSettings();
+                UpdateRangeButton();
+            });
+            _vRange.FontWeight = FontWeights.Bold;
+            UpdateRangeButton();
+
             _vRun = Btn("Run test", () =>
             {
                 var pre = _p.VerifyBlockers();
@@ -221,7 +240,7 @@ namespace SimSpares.AdaptiveMotion
                 }
                 if (MessageBox.Show("The plugin will now move the rig through pitch and roll poses up to " +
                         string.Format(CultureInfo.InvariantCulture, "±{0:F1}° pitch and ±{1:F1}° roll", s.Rig.MaxPitchDeg * Math.Min(1, o.MaxFractionPct / 100), s.Rig.MaxRollDeg * Math.Min(1, o.MaxFractionPct / 100)) +
-                        ".\n\nStay at the rig with the e-stop in reach and keep everyone clear. Stop returns the rig to centre.\n\nStart the test?",
+                        ".\n\nSAFETY: nobody may sit in the rig during the test. Check that the seat is empty and nobody is within reach of the moving parts. Stay next to the rig with the e-stop within reach. Stop returns the rig to centre.\n\nIs the rig empty and clear? Start the test?",
                         "Adaptive Motion: verification", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
                 if (!_p.StartVerification(out var why))
                 {
@@ -230,7 +249,7 @@ namespace SimSpares.AdaptiveMotion
                 }
             });
             _vStop = Btn("Stop (return to centre)", () => _p.StopVerification());
-            top.Children.Add(Buttons(_vRun, _vStop,
+            top.Children.Add(Buttons(_vRange, _vRun, _vStop,
                 Btn("Open report folder", () =>
                 {
                     string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Adaptive Motion IMU", "verification");
@@ -238,7 +257,6 @@ namespace SimSpares.AdaptiveMotion
                     catch (Exception e) { _p.Note("Cannot open folder: " + e.Message); }
                 })));
             var opts = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-            opts.Children.Add(Inline("Largest pose (% of limit)", Num(o.MaxFractionPct, v => { o.MaxFractionPct = Math.Max(10, Math.Min(100, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Speed (deg/s)", Num(o.RampDps, v => { o.RampDps = Math.Max(0.5, Math.Min(15, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Tolerance (%)", Num(o.TolPct, v => { o.TolPct = Math.Max(1, Math.Min(20, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Hold at centre after test (s)", Num(o.HoldSec, v => { o.HoldSec = Math.Max(0, Math.Min(60, v)); _p.SaveSettings(); })));
@@ -256,6 +274,20 @@ namespace SimSpares.AdaptiveMotion
             return dock;
         }
 
+        private void UpdateRangeButton()
+        {
+            var s = _p.Settings; var o = s.Verify;
+            bool full = o.MaxFractionPct >= 99;
+            double f = Math.Min(1, o.MaxFractionPct / 100);
+            string text = string.Format(CultureInfo.InvariantCulture, "{0}  (pitch ±{1:F1}°, roll ±{2:F1}°)  ⇄",
+                full ? "FULL MOTION 100 %" : "HALF MOTION 50 %", s.Rig.MaxPitchDeg * f, s.Rig.MaxRollDeg * f);
+            if (_vRange.Content as string == text) return;
+            _vRange.Content = text;
+            _vRange.Background = new SolidColorBrush(full ? Color.FromRgb(0xFF, 0x7A, 0x29) : Color.FromRgb(0xA6, 0xFF, 0x4D));
+            _vRange.Foreground = new SolidColorBrush(Color.FromRgb(0x0A, 0x0C, 0x0B));
+            _vRange.ToolTip = full ? "Click to switch to half motion (50 % of the SimHub limits)." : "Click to switch to full motion (100 % of the SimHub limits). Run half motion first.";
+        }
+
         private static FrameworkElement Inline(string label, FrameworkElement editor)
         {
             var p = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 16, 0) };
@@ -271,6 +303,8 @@ namespace SimSpares.AdaptiveMotion
             if (_vBlockers == null) return;
             bool running = _p.Verifying;
             _vRun.IsEnabled = !running;
+            _vRange.IsEnabled = !running;
+            UpdateRangeButton();
             _vStop.IsEnabled = running;
             var blockers = running ? new List<string>() : _p.VerifyBlockers();
             string bt = blockers.Count == 0 ? "" : "Before the test can run: " + string.Join("; ", blockers) + ".";

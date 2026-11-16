@@ -77,6 +77,7 @@ namespace SimSpares.AdaptiveMotion
         public void Init(PluginManager pluginManager)
         {
             Settings = this.ReadCommonSettings<AdaptiveMotionSettings>("GeneralSettings", () => new AdaptiveMotionSettings());
+            Settings.Verify.MaxFractionPct = 50;   // every SimHub start: the test begins in half motion
             Controller = new AdaptiveGainController(Settings.Controller);
             Park = new ParkMonitor(Settings.Park);
             if (Settings.ParkReferenceLearned) Park.SetReference(Settings.ParkPitchDeg, Settings.ParkRollDeg);
