@@ -237,20 +237,15 @@ namespace SimSpares.AdaptiveMotion
                 var pre = _p.VerifyBlockers();
                 if (pre.Count > 0)
                 {
-                    MessageBox.Show("The test cannot start yet:\n\n- " + string.Join("\n- ", pre),
-                        "Adaptive Motion: verification", MessageBoxButton.OK, MessageBoxImage.Information);
+                    SsDialog.Show(this, "TEST NOT READY", "The test cannot start yet:", pre, SsDialog.Kind.Info);
                     return;
                 }
-                if (MessageBox.Show("The plugin will now move the rig through pitch and roll poses up to " +
-                        string.Format(CultureInfo.InvariantCulture, "±{0:F1}° pitch and ±{1:F1}° roll", s.Rig.MaxPitchDeg * Math.Min(1, o.MaxFractionPct / 100), s.Rig.MaxRollDeg * Math.Min(1, o.MaxFractionPct / 100)) +
-                        ".\n\nSAFETY: nobody may sit in the rig during the test. Check that the seat is empty and nobody is within reach of the moving parts. Stay next to the rig with the e-stop within reach. Stop returns the rig to centre.\n\n" +
-                        string.Format(CultureInfo.InvariantCulture, "After the test the rig holds at centre for {0:F0} s and then moves to its park position (the controller parks it when the test stops sending). Stay clear until it has stopped moving.", o.HoldSec) +
-                        "\n\nIs the rig empty and clear? Start the test?",
-                        "Adaptive Motion: verification", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+                double f = Math.Min(1, o.MaxFractionPct / 100);
+                if (!SsDialog.ConfirmVerification(this, o.MaxFractionPct >= 99, s.Rig.MaxPitchDeg * f, s.Rig.MaxRollDeg * f, o.RampDps, o.HoldSec)) return;
                 if (!_p.StartVerification(out var why))
                 {
                     _p.Note("Verification cannot start: " + why);
-                    MessageBox.Show("The test did not start:\n\n" + why, "Adaptive Motion: verification", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SsDialog.Show(this, "TEST DID NOT START", "The test did not start:", why.Split(new[] { "; " }, StringSplitOptions.RemoveEmptyEntries), SsDialog.Kind.Warning);
                 }
             });
             _vStop = Btn("Stop (return to centre)", () => _p.StopVerification());
