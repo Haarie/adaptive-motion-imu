@@ -128,7 +128,10 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Row("Listen port (point SimHub here, 127.0.0.1)", IntBox(s.ProxyListenPort, v => s.ProxyListenPort = v)));
             root.Children.Add(Row("Controller host", Txt(s.ProxyTargetHost, v => s.ProxyTargetHost = v)));
             root.Children.Add(Row("Controller port", IntBox(s.ProxyTargetPort, v => s.ProxyTargetPort = v)));
-            root.Children.Add(Row("Header bytes before Axis1", IntBox(pk.HeaderBytes, v => pk.HeaderBytes = v)));
+            root.Children.Add(Row("Text command (e.g. NULLCAT,<Axis1>,<Axis2>,…)", Check(pk.Text, v => pk.Text = v)));
+            root.Children.Add(Row("  text: fixed first field (e.g. NULLCAT)", Txt(pk.TextPrefix, v => pk.TextPrefix = v)));
+            root.Children.Add(Row("  text: values in hexadecimal", Check(pk.TextHex, v => pk.TextHex = v)));
+            root.Children.Add(Row("Header bytes before Axis1 (binary)", IntBox(pk.HeaderBytes, v => pk.HeaderBytes = v)));
             root.Children.Add(Row("Axis count", IntBox(pk.AxisCount, v => pk.AxisCount = v)));
             root.Children.Add(Row("Bytes per axis (1/2)", IntBox(pk.BytesPerAxis, v => pk.BytesPerAxis = v == 1 ? 1 : 2)));
             root.Children.Add(Row("High byte first (Axis1a = MSB)", Check(pk.BigEndian, v => pk.BigEndian = v)));

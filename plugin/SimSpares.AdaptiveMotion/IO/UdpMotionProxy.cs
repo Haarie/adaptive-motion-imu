@@ -79,8 +79,7 @@ namespace SimSpares.AdaptiveMotion.IO
                     if (axes != null)
                     {
                         byte[] pkt;
-                        lock (_tplLock) pkt = (byte[])_template.Clone();
-                        MotionPacketCodec.Encode(_xf.Layout, axes, pkt);
+                        lock (_tplLock) pkt = MotionPacketCodec.Build(_xf.Layout, axes, _template, _template.Length);
                         lock (_sendLock) _tx.Send(pkt, pkt.Length, _target);
                         Injected++;
                         LastPacketSec = ImuSerialLink.NowSec;
@@ -145,8 +144,9 @@ namespace SimSpares.AdaptiveMotion.IO
                         if (_override != null) continue;   // test mode: the plugin drives the rig, SimHub's packet is dropped
                         lock (_tplLock) _template = original;
                     }
-                    bool motion = _xf.Process(p, p.Length, _gains(), _active());
-                    lock (_sendLock) _tx.Send(p, p.Length, _target);
+                    bool motion;
+                    var outp = _xf.ProcessAny(p, p.Length, _gains(), _active(), out motion);
+                    lock (_sendLock) _tx.Send(outp, outp.Length, _target);
                     Forwarded++;
                     LastPacketSec = ImuSerialLink.NowSec;
                     if (motion)

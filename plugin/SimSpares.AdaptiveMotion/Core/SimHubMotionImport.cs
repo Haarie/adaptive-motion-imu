@@ -23,6 +23,8 @@ namespace SimSpares.AdaptiveMotion.Core
         public double RollLimitDeg, PitchLimitDeg;     // 0 = limit switched off in SimHub
         public string OutputType = "", OutputHost = "";
         public int OutputPort;
+        public string UpdateCommand = "";              // SimHub's "update" command template, e.g. NULLCAT,<Axis1>,…
+        public PacketLayout Packet;                    // packet format derived from it (null = unknown)
         public DateTime FileTime;
         public List<string> Notes = new List<string>();
 
@@ -74,7 +76,15 @@ namespace SimSpares.AdaptiveMotion.Core
                     string type = MiniJson.Str(o, "Output.TypeName") ?? "";
                     string host = MiniJson.Str(o, "Output.Settings.TargetIPAddress");
                     double port = MiniJson.Num(o, "Output.Settings.TargetPort", 0);
-                    if (!string.IsNullOrEmpty(host) && port > 0) { r.OutputType = type; r.OutputHost = host; r.OutputPort = (int)port; break; }
+                    if (!string.IsNullOrEmpty(host) && port > 0)
+                    {
+                        r.OutputType = type; r.OutputHost = host; r.OutputPort = (int)port;
+                        r.UpdateCommand = MiniJson.Str(o, "Output.Settings.GenericProtocolDefinition.UpdateCommands[0].Command") ?? "";
+                        int bits = (int)MiniJson.Num(o, "Output.Settings.GenericProtocolDefinition.AxisResolution", 16);
+                        r.Packet = PacketLayout.FromSimHubCommand(r.UpdateCommand, bits);
+                        if (r.Packet == null && r.UpdateCommand != "") r.Notes.Add("SimHub's update command \"" + r.UpdateCommand + "\" has no axis placeholders: set the packet format on the Advanced tab.");
+                        break;
+                    }
                 }
             if (r.OutputHost == "") r.Notes.Add("No UDP output found in SimHub's motion settings: enter the controller address by hand.");
 

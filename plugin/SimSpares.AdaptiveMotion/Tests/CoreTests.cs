@@ -29,6 +29,7 @@ static class CoreTests
         GeometryTests();
         VerifyTests();
         ImportTests();
+        TextPacketTests();
         Console.WriteLine($"{passes} passed, {fails} failed");
         return fails == 0 ? 0 : 1;
     }
@@ -552,5 +553,46 @@ static class CoreTests
         Check(r.Differences(g, ActuatorLayout.FourCorner).Any(d => d.Contains("stroke")), "a changed stroke is detected");
         var bad = SimHubMotionImport.FromJson("{\"Devices\":[{\"Geometry\":{\"BaseGeometry\":{\"TypeName\":\"Geometry6DofStewart\",\"Settings\":{}}}}]}", DateTime.Now);
         Check(!bad.Ok && bad.Error.Contains("not supported"), "unsupported rig type is reported");
+    }
+    static byte[] Ascii(string t) => System.Text.Encoding.ASCII.GetBytes(t);
+    static string Str(byte[] b) => System.Text.Encoding.ASCII.GetString(b);
+
+    static void TextPacketTests()
+    {
+        var l = PacketLayout.FromSimHubCommand("NULLCAT,<Axis1>,<Axis2>,<Axis3>,<Axis4>,<Axis5>,<Axis6>,<Axis7>,<Axis8>,<Axis9>,<Axis10>", 16);
+        Check(l != null && l.Text && l.TextPrefix == "NULLCAT" && l.AxisCount == 10 && l.MaxValue == 65535, "nullCAT text command recognised: " + (l == null ? "null" : l.Describe()));
+        var b = PacketLayout.FromSimHubCommand("S<Axis1a><Axis1b><Axis2a><Axis2b>E", 16);
+        Check(b != null && !b.Text && b.HeaderBytes == 1 && b.TrailerBytes == 1 && b.AxisCount == 2 && b.BytesPerAxis == 2 && b.BigEndian, "binary command recognised: " + (b == null ? "null" : b.Describe()));
+        Check(PacketLayout.FromSimHubCommand("<Axis1b><Axis1a>", 16).BigEndian == false, "low byte first recognised");
+
+        var idle = Ascii("NULLCAT,32767,32767,32767,32767,0,0,0,0,0,0\n");
+        Check(MotionPacketCodec.IsMotionPacket(l, idle, idle.Length) && !MotionPacketCodec.IsMotionPacket(new PacketLayout(), idle, idle.Length), "text packet matches only the text layout");
+        var xf = new MotionPacketTransformer(l, ActuatorLayout.FourCorner);
+        xf.BeginNeutralCapture();
+        for (int i = 0; i < 20; i++) { bool m; xf.ProcessAny(idle, idle.Length, GainSnapshot.Unity, false, out m); }
+        Check(xf.EndNeutralCapture() && xf.Neutral[0] == 32767 && xf.Neutral[5] == 0, "neutral captured from text packets");
+        var roll = Ascii("NULLCAT,42767,22767,42767,22767,0,0,0,0,0,0\n");
+        bool mo; var same = xf.ProcessAny(roll, roll.Length, GainSnapshot.Unity, false, out mo);
+        Check(mo && ReferenceEquals(same, roll) && xf.LastAxes[0] == 42767, "pass-through returns the identical packet");
+        var outp = xf.ProcessAny(roll, roll.Length, new GainSnapshot(1, 1, 0.5, 1, ControllerStatus.Ok), true, out mo);
+        Check(Str(outp) == "NULLCAT,37767,27767,37767,27767,0,0,0,0,0,0\n", "roll gain 0.5 rewrites the text packet: " + Str(outp).TrimEnd());
+        var other = Ascii("NULLCAT,START");
+        var o2 = xf.ProcessAny(other, other.Length, GainSnapshot.Unity, true, out mo);
+        Check(!mo && ReferenceEquals(o2, other) && xf.LastOtherSample == "NULLCAT,START", "non-motion text command forwarded untouched and shown");
+
+        var det = MotionPacketCodec.DetectText(idle, idle.Length, 65535);
+        Check(det != null && det.TextPrefix == "NULLCAT" && det.AxisCount == 10 && !det.TextHex, "format detected from a live packet");
+        var hx = Ascii("M,7FFF,7FFF,00A0\r\n");
+        var dh = MotionPacketCodec.DetectText(hx, hx.Length, 65535);
+        Check(dh != null && dh.TextHex && dh.TextPrefix == "M" && dh.AxisCount == 3, "hex text detected");
+        var rebuilt = MotionPacketCodec.Build(dh, new double[] { 32768, 1, 161 }, hx, hx.Length);
+        Check(Str(rebuilt) == "M,8000,1,00A1\r\n", "hex values, zero padding and line end kept: " + Str(rebuilt).TrimEnd());
+        Check(MotionPacketCodec.DetectText(new byte[] { 0x7F, 0xFF, 0x00, 0x10 }, 4, 65535) == null, "binary packet is not text");
+
+        string json = "{\"Devices\":[{\"IsEnabled\":true,\"Geometry\":{\"BaseGeometry\":{\"TypeName\":\"Geometry3Dof4Linear\",\"Settings\":{\"RigLength\":1250,\"RigWidth\":660,\"ActuatorsStroke\":200}}},"
+            + "\"OutputEx\":{\"AggregatedOutputs\":[{\"Output\":{\"TypeName\":\"GenericUDPOutputV2\",\"Settings\":{\"TargetIPAddress\":\"192.168.50.1\",\"TargetPort\":4444,"
+            + "\"GenericProtocolDefinition\":{\"AxisResolution\":16,\"UpdateCommands\":[{\"Command\":\"NULLCAT,<Axis1>,<Axis2>,<Axis3>,<Axis4>\"}]}}}}]}}]}";
+        var r = SimHubMotionImport.FromJson(json, DateTime.Now);
+        Check(r.Ok && r.Packet != null && r.Packet.Text && r.Packet.AxisCount == 4, "packet format imported from SimHub's update command");
     }
 }

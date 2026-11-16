@@ -101,16 +101,23 @@ namespace SimSpares.AdaptiveMotion
                     if (!_p.Proxy.Running) return Todo("Enter the controller host and port SimHub used before, then Save.");
                     var xf = _p.Proxy.Transformer;
                     bool fresh = !double.IsNaN(_p.Proxy.LastPacketSec) && IO.ImuSerialLink.NowSec - _p.Proxy.LastPacketSec < 2;
+                    if (xf != null && xf.MotionPackets == 0 && xf.OtherPackets > 0 && fresh)
+                        return Bad("SimHub's packets arrive, but they do not match the packet format. Expected: " + s.Packet.Describe() + ". Received: "
+                                   + (xf.LastOtherSample ?? "?") + ". Press Detect format (or Import from SimHub in step 3). Motion still passes through unchanged.");
                     if (xf == null || xf.MotionPackets == 0 || !fresh)
-                        return Todo(string.Format(CultureInfo.InvariantCulture, "In SimHub's Generic UDP output, send to 127.0.0.1 port {0} and switch motion on. No motion packets yet.", s.ProxyListenPort));
-                    return Done(string.Format(CultureInfo.InvariantCulture, "Receiving SimHub motion ({0} axes, max {1}) and forwarding to {2}:{3}. {4}",
-                        s.Packet.AxisCount, s.Packet.MaxValue, s.ProxyTargetHost, s.ProxyTargetPort, _p.ProxyActive ? "Closed loop ACTIVE." : "Passing through unchanged."));
+                        return Todo(string.Format(CultureInfo.InvariantCulture, "In SimHub's Generic UDP output, send to 127.0.0.1 port {0} and switch motion on. No packets yet.", s.ProxyListenPort));
+                    return Done(string.Format(CultureInfo.InvariantCulture, "Receiving SimHub motion ({0}) and forwarding to {1}:{2}. {3}",
+                        s.Packet.Describe(), s.ProxyTargetHost, s.ProxyTargetPort, _p.ProxyActive ? "Closed loop ACTIVE." : "Passing through unchanged."));
                 },
                 Row("Controller host", Txt(s.ProxyTargetHost, v => s.ProxyTargetHost = v)),
                 Row("Controller port (SimHub's old target port)", IntBox(s.ProxyTargetPort, v => s.ProxyTargetPort = v)),
                 Row("Plugin listens on 127.0.0.1 port", IntBox(s.ProxyListenPort, v => s.ProxyListenPort = v)),
-                Buttons(Btn("Use UDP proxy and save", () => { s.Mode = ApplyMode.UdpProxy; _p.SaveSettings(); _p.ApplySettings(); _p.Note("UDP proxy on (pass-through)"); })),
-                Hint("The packet format (header bytes, 8/16-bit, byte order) is on the Advanced tab; the defaults match SimHub's Generic UDP <Axis1a><Axis1b>… with 16-bit values.")));
+                Buttons(Btn("Use UDP proxy and save", () => { s.Mode = ApplyMode.UdpProxy; _p.SaveSettings(); _p.ApplySettings(); _p.Note("UDP proxy on (pass-through)"); }),
+                        Btn("Detect format", () => { string m; _p.DetectPacketFormat(out m); if (!m.StartsWith("Packet format detected")) _p.Note("Detect format: " + m); })),
+                Hint("Packet format = how SimHub writes the actuator positions into each UDP packet (its \"update command\"). " +
+                     "Text like NULLCAT,<Axis1>,<Axis2>,… sends the numbers as readable text; binary like <Axis1a><Axis1b>… sends two bytes per actuator. " +
+                     "The plugin has to read exactly that format to know where the rig is commanded to; Import from SimHub (step 3) or Detect format sets it for you. " +
+                     "Current: " + s.Packet.Describe() + ".")));
 
             // 5 ---------------------------------------------------------------------------------
             root.Children.Add(Step("5. Neutral and level (rig parked at its centre, motion on, game closed)",

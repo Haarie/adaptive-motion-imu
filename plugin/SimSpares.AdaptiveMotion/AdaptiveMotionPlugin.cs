@@ -141,6 +141,7 @@ namespace SimSpares.AdaptiveMotion
             {
                 try
                 {
+                    _otherNoted = false;
                     var xf = new MotionPacketTransformer(Settings.Packet, Settings.Actuators, Settings.Neutral);
                     Proxy.Start(Settings.ProxyListenPort, Settings.ProxyTargetHost, Settings.ProxyTargetPort, xf,
                                 () => Controller.Snapshot, () => ProxyActive);
@@ -340,17 +341,49 @@ namespace SimSpares.AdaptiveMotion
             var s = Settings;
             s.Actuators = r.Layout;
             r.ApplyTo(s.Rig);
+            if (r.Packet != null)
+            {
+                r.Packet.TextHex = s.Packet.Text && r.Packet.Text && s.Packet.TextPrefix == r.Packet.TextPrefix ? s.Packet.TextHex : r.Packet.TextHex; // keep a detected hex flag
+                s.Packet.CopyFrom(r.Packet);
+                s.Neutral = null;   // different packet format → capture neutral again
+            }
             if (s.Packet.AxisCount < s.Rig.Count) s.Packet.AxisCount = s.Rig.Count;
             bool local = r.OutputHost == "127.0.0.1" || r.OutputHost.Equals("localhost", StringComparison.OrdinalIgnoreCase);
             if (r.OutputHost != "" && !local) { s.ProxyTargetHost = r.OutputHost; s.ProxyTargetPort = r.OutputPort; }
             SaveSettings();
             ApplySettings();
-            var msg = "Imported from " + r.Summary() + ".";
+            var msg = "Imported from " + r.Summary() + "." + (r.Packet != null ? " Packet format: " + r.Packet.Describe() + "." : "");
             if (local && r.OutputPort == s.ProxyListenPort) msg += " SimHub already sends to the plugin.";
             if (r.Notes.Count > 0) msg += " " + string.Join(" ", r.Notes);
             msg += " Changed something in SimHub's motion settings? Restart SimHub first: it saves them when it closes.";
             Note(msg);
             return true;
+        }
+
+        /// <summary>Take the packet format from the last packet SimHub sent that did not match the current format.</summary>
+        public bool DetectPacketFormat(out string message)
+        {
+            var xf = Proxy.Transformer;
+            var pkt = xf?.LastOtherPacket;
+            if (pkt == null) { message = "no packets from SimHub seen yet: check that SimHub sends to 127.0.0.1:" + Settings.ProxyListenPort + " with motion on"; return false; }
+            var l = MotionPacketCodec.DetectText(pkt, pkt.Length, Settings.Packet.MaxValue > 255 ? Settings.Packet.MaxValue : 65535);
+            if (l == null) { message = "the last packet is binary (" + MotionPacketCodec.Sample(pkt, pkt.Length) + "): set header bytes, axes and bytes per axis on the Advanced tab"; return false; }
+            Settings.Packet.CopyFrom(l);
+            Settings.Neutral = null;
+            SaveSettings();
+            ApplySettings();
+            message = "Packet format detected: " + l.Describe() + ". Now capture the neutral (step 5).";
+            Note(message);
+            return true;
+        }
+
+        private bool _otherNoted;
+        private void NoteUnknownPackets()
+        {
+            var xf = Proxy.Transformer;
+            if (_otherNoted || xf == null || xf.MotionPackets > 0 || xf.OtherPackets < 20 || xf.LastOtherSample == null) return;
+            _otherNoted = true;
+            Note("Packets from SimHub do not match the packet format (" + Settings.Packet.Describe() + "). Last packet: " + xf.LastOtherSample + "  → Setup step 4: Detect format.");
         }
 
         /// <summary>At start: fill an empty rig from SimHub, or warn when SimHub's values changed since.</summary>
@@ -457,6 +490,7 @@ namespace SimSpares.AdaptiveMotion
             if (_gameRunning && Verifying) StopVerification("a game started");
             if (Verifying && !Proxy.Running) { lock (VerifyLock) { _lastRun = _verifyRun; _verifyRun = null; } Note("Verification stopped: the proxy stopped"); }
             FinishVerificationIfDone();
+            NoteUnknownPackets();
             if (Settings.LogAutoStart)
             {
                 if (_gameRunning && !wasRunning && !Logger.Active) { StartLog(); _autoLogging = true; }
