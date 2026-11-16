@@ -212,11 +212,22 @@ namespace SimSpares.AdaptiveMotion
             var top = new StackPanel();
             _vRun = Btn("Run test", () =>
             {
+                var pre = _p.VerifyBlockers();
+                if (pre.Count > 0)
+                {
+                    MessageBox.Show("The test cannot start yet:\n\n- " + string.Join("\n- ", pre),
+                        "Adaptive Motion: verification", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 if (MessageBox.Show("The plugin will now move the rig through pitch and roll poses up to " +
                         string.Format(CultureInfo.InvariantCulture, "±{0:F1}° pitch and ±{1:F1}° roll", s.Rig.MaxPitchDeg * Math.Min(1, o.MaxFractionPct / 100), s.Rig.MaxRollDeg * Math.Min(1, o.MaxFractionPct / 100)) +
                         ".\n\nStay at the rig with the e-stop in reach and keep everyone clear. Stop returns the rig to centre.\n\nStart the test?",
                         "Adaptive Motion: verification", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
-                if (!_p.StartVerification(out var why)) _p.Note("Verification cannot start: " + why);
+                if (!_p.StartVerification(out var why))
+                {
+                    _p.Note("Verification cannot start: " + why);
+                    MessageBox.Show("The test did not start:\n\n" + why, "Adaptive Motion: verification", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             });
             _vStop = Btn("Stop (return to centre)", () => _p.StopVerification());
             top.Children.Add(Buttons(_vRun, _vStop,
