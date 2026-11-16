@@ -102,6 +102,7 @@ namespace SimSpares.AdaptiveMotion.Core
             for (int i = 0; i < tok.Length; i++)
             {
                 string t = tok[i].Trim();
+                if (IsPlaceholder(t)) { widths[i] = -1; if (axes != null && i < axes.Length) axes[i] = 0; continue; }   // e.g. "<Axis10>" SimHub left unfilled: kept as text
                 long v;
                 bool ok = l.TextHex ? long.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out v)
                                     : long.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out v);
@@ -124,18 +125,22 @@ namespace SimSpares.AdaptiveMotion.Core
             if (tok.Length < 2) return null;
             int first = 0;
             var prefix = new List<string>();
-            while (first < tok.Length && !IsNumber(tok[first].Trim(), true)) { prefix.Add(tok[first]); first++; }
+            while (first < tok.Length && !IsNumber(tok[first].Trim(), true) && !IsPlaceholder(tok[first].Trim())) { prefix.Add(tok[first]); first++; }
             int n = tok.Length - first;
             if (n < 2) return null;
             bool hex = false;
             for (int i = first; i < tok.Length; i++)
             {
                 string t = tok[i].Trim();
+                if (IsPlaceholder(t)) continue;
                 if (!IsNumber(t, true)) return null;
                 if (!IsNumber(t, false)) hex = true;
             }
             return new PacketLayout { Text = true, TextPrefix = string.Join(",", prefix), AxisCount = n, TextHex = hex, MaxValue = maxValue, BytesPerAxis = 2 };
         }
+
+        /// <summary>An axis placeholder SimHub did not fill in (it sends "&lt;Axis10&gt;" literally when it has no 10th axis).</summary>
+        public static bool IsPlaceholder(string t) => t.Length > 2 && t[0] == '<' && t[t.Length - 1] == '>';
 
         private static bool IsNumber(string t, bool allowHex)
         {
@@ -180,10 +185,19 @@ namespace SimSpares.AdaptiveMotion.Core
                 return b;
             }
             TryParseText(l, template, len, null, out var suffix, out var widths);
+            string[] orig = null;
+            {
+                string ts = Encoding.ASCII.GetString(template, 0, len);
+                ts = ts.Substring(0, ts.Length - suffix.Length);
+                if (l.TextPrefix != "" && ts.StartsWith(l.TextPrefix + ",", StringComparison.Ordinal)) ts = ts.Substring(l.TextPrefix.Length + 1);
+                orig = ts.Split(',');
+            }
             var sb = new StringBuilder();
             if (l.TextPrefix != "") sb.Append(l.TextPrefix).Append(',');
             for (int i = 0; i < l.AxisCount; i++)
             {
+                if (widths != null && i < widths.Length && widths[i] == -1 && orig != null && i < orig.Length)
+                { if (i > 0) sb.Append(','); sb.Append(orig[i]); continue; }   // unfilled placeholder: send back as received
                 long v = (long)Math.Round(axes[i]);
                 if (v < 0) v = 0; if (v > l.MaxValue) v = l.MaxValue;
                 string t = l.TextHex ? v.ToString("X", CultureInfo.InvariantCulture) : v.ToString(CultureInfo.InvariantCulture);

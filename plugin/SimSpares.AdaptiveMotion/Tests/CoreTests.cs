@@ -588,6 +588,16 @@ static class CoreTests
         var rebuilt = MotionPacketCodec.Build(dh, new double[] { 32768, 1, 161 }, hx, hx.Length);
         Check(Str(rebuilt) == "M,8000,1,00A1\r\n", "hex values, zero padding and line end kept: " + Str(rebuilt).TrimEnd());
         Check(MotionPacketCodec.DetectText(new byte[] { 0x7F, 0xFF, 0x00, 0x10 }, 4, 65535) == null, "binary packet is not text");
+        // what Haarie's SimHub really sends: 9 values, the 10th placeholder left as text
+        var real = Ascii("NULLCAT,32767,32767,32767,32767,32767,32767,32767,32767,32767,<Axis10>");
+        Check(MotionPacketCodec.IsMotionPacket(l, real, real.Length), "unfilled <Axis10> placeholder accepted");
+        var xr = new MotionPacketTransformer(l, ActuatorLayout.FourCorner);
+        bool mr; var pass = xr.ProcessAny(real, real.Length, GainSnapshot.Unity, false, out mr);
+        Check(mr && ReferenceEquals(pass, real) && xr.LastAxes[1] == 32767, "real nullCAT packet decoded, passed through untouched");
+        var moved = MotionPacketCodec.Build(l, new double[] { 40000, 25534, 40000, 25534, 32767, 32767, 32767, 32767, 32767, 0 }, real, real.Length);
+        Check(Str(moved) == "NULLCAT,40000,25534,40000,25534,32767,32767,32767,32767,32767,<Axis10>", "test packet keeps <Axis10> as SimHub sends it: " + Str(moved));
+        var dr = MotionPacketCodec.DetectText(real, real.Length, 65535);
+        Check(dr != null && dr.TextPrefix == "NULLCAT" && dr.AxisCount == 10 && !dr.TextHex, "format detected from the real packet");
         var syn = MotionPacketCodec.Synthesize(l);
         Check(MotionPacketCodec.IsMotionPacket(l, syn, syn.Length) && Str(MotionPacketCodec.Build(l, new double[] { 32767, 32767, 32767, 32767, 0, 0, 0, 0, 0, 0 }, syn, syn.Length)) == "NULLCAT,32767,32767,32767,32767,0,0,0,0,0,0",
               "test packets can be built without SimHub sending (idle)");
