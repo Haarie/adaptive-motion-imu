@@ -25,7 +25,16 @@ namespace SimSpares.AdaptiveMotion.Core
     {
         private double[,] _r = Identity();        // sensor -> rig
         private double _refPitch, _refRoll;
+        private volatile bool _driverActive;
+        private double _drvPitch, _drvRoll;
         public bool LevelCaptured { get; private set; }
+
+        /// <summary>
+        /// Seat attitude with the driver in the seat, relative to the (empty-rig) level. Subtracted only while
+        /// <see cref="DriverOffsetActive"/> is set (driving), so the driver's normal position reads 0°.
+        /// </summary>
+        public void SetDriverOffset(double pitchDeg, double rollDeg) { _drvPitch = pitchDeg; _drvRoll = rollDeg; }
+        public bool DriverOffsetActive { get => _driverActive; set => _driverActive = value; }
 
         public void SetMounting(Axis sensorForward, Axis sensorUp)
         {
@@ -91,8 +100,8 @@ namespace SimSpares.AdaptiveMotion.Core
 
             return new PlatformState
             {
-                PitchDeg = rawPitch - _refPitch,
-                RollDeg = WrapDeg(rawRoll - _refRoll),
+                PitchDeg = rawPitch - _refPitch - (_driverActive ? _drvPitch : 0),
+                RollDeg = WrapDeg(rawRoll - _refRoll - (_driverActive ? _drvRoll : 0)),
                 PitchRateDps = -gyr[1],
                 RollRateDps = gyr[0],
                 YawRateDps = gyr[2],

@@ -27,6 +27,9 @@ namespace SimSpares.AdaptiveMotion
         public double[] MountAutoUp = null;      // rig up in sensor coordinates (Auto-align)
         public bool LevelCaptured = false;
         public double LevelPitchDeg = 0;
+        // Driver offset: seat attitude with the driver seated, relative to the empty-rig level (applied while driving)
+        public bool DriverOffsetCaptured = false;
+        public double DriverOffsetPitchDeg = 0, DriverOffsetRollDeg = 0;
         public double LevelRollDeg = 0;
         public int DeviceDlpf = 3;
         public int DeviceOutputDivider = 2;

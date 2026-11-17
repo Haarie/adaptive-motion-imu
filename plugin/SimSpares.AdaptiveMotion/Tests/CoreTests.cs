@@ -130,6 +130,16 @@ static class CoreTests
         e.SetLevelReference(0, 4);
         st = e.Update(FrameFromEuler(4, 0), 0);
         Check(Near(st.RollDeg, 0, 0.01), "level reference removes offset");
+        // driver offset: subtracted only while active (driving)
+        e.SetLevelReference(0, 0);
+        e.SetDriverOffset(-0.6, 0.1);
+        st = e.Update(FrameFromEuler(0.1, 0.6), 0);          // seated pose: pitch -0.6 (nose down), roll 0.1
+        Check(Near(st.PitchDeg, -0.6, 0.02) && Near(st.RollDeg, 0.1, 0.02), $"driver offset not applied when inactive ({st.PitchDeg:F2},{st.RollDeg:F2})");
+        e.DriverOffsetActive = true;
+        st = e.Update(FrameFromEuler(0.1, 0.6), 0);
+        Check(Near(st.PitchDeg, 0, 0.02) && Near(st.RollDeg, 0, 0.02), $"driver offset makes the seated pose read 0 ({st.PitchDeg:F2},{st.RollDeg:F2})");
+        e.DriverOffsetActive = false; e.SetDriverOffset(0, 0);
+        e.SetLevelReference(0, 4);
 
         // Sensor mounted rotated 90° (sensor +Y forward): a sensor-frame tilt about X is rig pitch
         var e2 = new PlatformEstimator();
@@ -370,6 +380,24 @@ static class CoreTests
         Check(warns == 1 && !pm3.MountShifted && !pm3.LastWasSeated, "seated and empty poses both pass afterwards");
         park3(-2.5, true);                   // 2.5 deg off both: real shift, never learned as seated
         Check(warns == 2 && pm3.MountShifted && seatedLearned == 1, "large offset after a session still warns");
+
+        // known driver offset: seated pose comes from it, nothing learned; the empty pose is not learned right after a session
+        var pm4 = new ParkMonitor(new ParkSettings()) { LearnSeated = false }; double t4 = 0; int learned4 = 0, seated4 = 0, warn4 = 0;
+        pm4.ReferenceLearned += (p, r) => learned4++; pm4.SeatedReferenceLearned += (p, r) => seated4++; pm4.Checked += (d, sh) => { if (sh) warn4++; };
+        Action<double, bool> park4 = (pitch, after) =>
+        {
+            pm4.AfterSession = after;
+            for (int i = 0; i < 500; i++) { t4 += 0.004; pm4.Update(new PlatformState { TimeSec = t4 }, false); }
+            for (int i = 0; i < 1250; i++) { t4 += 0.004; pm4.Update(new PlatformState { PitchDeg = pitch, TimeSec = t4, Flags = ImuFlags.Still }, false); }
+        };
+        park4(-0.6, true);                   // first park right after a session (seated): not used as the empty pose
+        Check(learned4 == 0 && !pm4.HasReference, "empty pose is not learned right after a session");
+        park4(0.0, false);                   // empty rig: learned
+        pm4.SetSeatedReference(pm4.RefPitchDeg - 0.6, pm4.RefRollDeg);
+        park4(-0.62, true); park4(0.03, false);
+        Check(learned4 == 1 && seated4 == 0 && warn4 == 0, "seated pose from the driver offset passes, empty passes");
+        park4(-1.2, true);                   // 0.6 off the seated pose: warns, nothing learned
+        Check(warn4 == 1 && seated4 == 0, "with a known offset nothing is learned and a shift warns");
 
         // brief stillness shorter than settle + average never completes a check
         var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;

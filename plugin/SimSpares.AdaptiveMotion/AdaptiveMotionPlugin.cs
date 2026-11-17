@@ -50,6 +50,7 @@ namespace SimSpares.AdaptiveMotion
 
         // level capture
         private double _levelUntil = double.NaN, _levelSumP, _levelSumR; private int _levelN;
+        private bool _levelIsDriver;   // the running capture is the driver offset, not the level
         // neutral capture
         private double _neutralUntil = double.NaN;
         // auto-align capture
@@ -93,6 +94,7 @@ namespace SimSpares.AdaptiveMotion
             Park.ReferenceLearned += (p, r) =>
             {
                 Settings.ParkReferenceLearned = true; Settings.ParkPitchDeg = p; Settings.ParkRollDeg = r;
+                SyncSeatedParkReference();
                 SaveSettings();
                 Note(string.Format("Parked pose learned: pitch {0:F2}°, roll {1:F2}°", p, r));
             };
@@ -143,6 +145,8 @@ namespace SimSpares.AdaptiveMotion
             }
             catch (Exception e) { Note("Mounting: " + e.Message); }
             if (Settings.LevelCaptured) Estimator.SetLevelReference(Settings.LevelPitchDeg, Settings.LevelRollDeg);
+            Estimator.SetDriverOffset(Settings.DriverOffsetCaptured ? Settings.DriverOffsetPitchDeg : 0, Settings.DriverOffsetCaptured ? Settings.DriverOffsetRollDeg : 0);
+            SyncSeatedParkReference();
             Controller.UpdateSettings(Settings.Controller);
             Park.UpdateSettings(Settings.Park);
             if (Imu.Connected) Imu.Send("AUTOCAL " + (Settings.AutoGyroCal ? "1" : "0"));
@@ -522,6 +526,7 @@ namespace SimSpares.AdaptiveMotion
         private void OnImuFrame(ImuFrame f)
         {
             double now = ImuSerialLink.NowSec;
+            Estimator.DriverOffsetActive = Settings.DriverOffsetCaptured && _gameRunning && !Verifying;
             var st = Estimator.Update(f, now);
 
             if (!double.IsNaN(_alignUntil))
@@ -566,6 +571,26 @@ namespace SimSpares.AdaptiveMotion
 
         private void FinishLevelCapture()
         {
+            if (_levelIsDriver)
+            {
+                _levelIsDriver = false;
+                _levelUntil = double.NaN;
+                if (_levelN <= 50) { Note("Driver offset capture failed: no IMU data"); return; }
+                double dp = _levelSumP / _levelN - Settings.LevelPitchDeg, dr = _levelSumR / _levelN - Settings.LevelRollDeg;
+                if (Math.Abs(dp) > 3 || Math.Abs(dr) > 3)
+                {
+                    Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "Driver offset not saved: the seat is {0:F2}° pitch / {1:F2}° roll off the level, more than a driver's weight explains. Is the rig at its centre position?", dp, dr));
+                    return;
+                }
+                Settings.DriverOffsetCaptured = true; Settings.DriverOffsetPitchDeg = dp; Settings.DriverOffsetRollDeg = dr;
+                Estimator.SetDriverOffset(dp, dr);
+                SyncSeatedParkReference();
+                SaveSettings();
+                Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "Driver offset captured: pitch {0:+0.00;-0.00}°, roll {1:+0.00;-0.00}° (applied while driving)", dp, dr));
+                return;
+            }
             if (_levelN > 50)
             {
                 Settings.LevelPitchDeg = _levelSumP / _levelN;
@@ -575,6 +600,7 @@ namespace SimSpares.AdaptiveMotion
                 // angles are now measured against a new level: the stored parked pose is meaningless
                 Settings.ParkReferenceLearned = false; Settings.ParkSeatedLearned = false;
                 Park.ClearReference();
+                SyncSeatedParkReference();
                 SaveSettings();
                 Note(string.Format("Level captured: pitch {0:F2}°, roll {1:F2}°", Settings.LevelPitchDeg, Settings.LevelRollDeg));
             }
@@ -724,6 +750,7 @@ namespace SimSpares.AdaptiveMotion
 
             this.AddAction("ToggleAdaptive", (a, b) => { Settings.AdaptiveEnabled = !Settings.AdaptiveEnabled; Note("Adaptive " + (Settings.AdaptiveEnabled ? "ON" : "OFF")); });
             this.AddAction("CaptureLevel", (a, b) => StartLevelCapture());
+            this.AddAction("CaptureDriverOffset", (a, b) => StartDriverOffsetCapture());
             this.AddAction("GyroCalibrate", (a, b) => Imu.Send("GYROCAL"));
             this.AddAction("ResetTrip", (a, b) => { Controller.ResetTrip(); Note("Trip reset"); });
             this.AddAction("ResetGains", (a, b) => { Controller.ResetGains(); Note("Gains reset"); });
@@ -774,9 +801,45 @@ namespace SimSpares.AdaptiveMotion
 
         public void StartLevelCapture()
         {
+            if (_gameRunning) { Note("Close the game first: the level is captured with the rig empty and at its centre"); return; }
+            _levelIsDriver = false;
             _levelSumP = _levelSumR = 0; _levelN = 0;
             _levelUntil = ImuSerialLink.NowSec + 1.5;
-            Note("Capturing level for 1.5 s — keep the rig parked at its centre position");
+            Note("Capturing level for 1.5 s: rig EMPTY and at its centre position");
+        }
+
+        /// <summary>Driver in the seat, rig at its centre, no game: the seat attitude relative to the level becomes the driver offset.</summary>
+        public void StartDriverOffsetCapture()
+        {
+            if (!Settings.LevelCaptured) { Note("Capture the level (rig empty) first"); return; }
+            if (_gameRunning) { Note("Close the game first: the driver offset is captured with the rig at its centre"); return; }
+            if (Verifying) { Note("Not during the verification test"); return; }
+            _levelIsDriver = true;
+            _levelSumP = _levelSumR = 0; _levelN = 0;
+            _levelUntil = ImuSerialLink.NowSec + 1.5;
+            Note("Capturing the driver offset for 1.5 s: sit still in your normal driving position");
+        }
+
+        public void ClearDriverOffset()
+        {
+            Settings.DriverOffsetCaptured = false; Settings.DriverOffsetPitchDeg = Settings.DriverOffsetRollDeg = 0;
+            Estimator.SetDriverOffset(0, 0);
+            SyncSeatedParkReference();
+            SaveSettings();
+            Note("Driver offset cleared");
+        }
+
+        /// <summary>Seated park pose = empty park pose + driver offset (when both are known).</summary>
+        private void SyncSeatedParkReference()
+        {
+            if (Park == null) return;
+            Park.LearnSeated = !Settings.DriverOffsetCaptured;
+            if (Settings.DriverOffsetCaptured && Park.HasReference)
+            {
+                Park.SetSeatedReference(Park.RefPitchDeg + Settings.DriverOffsetPitchDeg, Park.RefRollDeg + Settings.DriverOffsetRollDeg);
+                Settings.ParkSeatedLearned = false;   // derived, not learned
+            }
+            else if (Settings.DriverOffsetCaptured) Park.ClearSeatedReference();
         }
 
         /// <summary>Forget the parked pose; it is learned again at the next park (use after re-mounting the box).</summary>
@@ -819,8 +882,9 @@ namespace SimSpares.AdaptiveMotion
                 "Adaptive Motion IMU log - Sim-Spares",
                 "started " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", inv) + (tag.Length > 0 ? "  " + tag.Replace("_", " / ") : ""),
                 "device " + _deviceInfo,
-                string.Format(inv, "mode {0}, adaptive {1}, level captured {2} (pitch {3:F2}, roll {4:F2}), rate {5} Hz",
-                    Settings.Mode, Settings.AdaptiveEnabled, Settings.LevelCaptured, Settings.LevelPitchDeg, Settings.LevelRollDeg, Settings.LogRateHz),
+                string.Format(inv, "mode {0}, adaptive {1}, level captured {2} (pitch {3:F2}, roll {4:F2}), driver offset {6}, rate {5} Hz",
+                    Settings.Mode, Settings.AdaptiveEnabled, Settings.LevelCaptured, Settings.LevelPitchDeg, Settings.LevelRollDeg, Settings.LogRateHz,
+                    Settings.DriverOffsetCaptured ? string.Format(inv, "pitch {0:F2}, roll {1:F2} (applied while the game runs)", Settings.DriverOffsetPitchDeg, Settings.DriverOffsetRollDeg) : "none"),
                 string.Format(inv, "limits pitch {0} roll {1} deg, rate {2} deg/s, heave {3} g, cue {4} g, vib {5} g, knee {6}, min gain {7}, impact {8} g, trip {9}/{10} deg",
                     c.PitchLimitDeg, c.RollLimitDeg, c.RateLimitDps, c.HeaveLimitG, c.CueLimitG, c.VibLimitG, c.Knee, c.MinGain, c.ImpactG, c.PitchHardDeg, c.RollHardDeg),
                 "flags: 1 I2C error, 2 gyro calibrated, 4 accel sat, 8 gyro sat, 16 clone IMU, 32 frames dropped, 64 tilt correction gated, 128 still",

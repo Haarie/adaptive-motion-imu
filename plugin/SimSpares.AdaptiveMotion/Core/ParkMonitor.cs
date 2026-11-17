@@ -40,6 +40,8 @@ namespace SimSpares.AdaptiveMotion.Core
         public double SeatedRollDeg { get; private set; }
         /// <summary>Set by the caller: true while this park follows a game session closely (driver probably seated).</summary>
         public bool AfterSession { get; set; }
+        /// <summary>When false, the seated pose is never learned automatically (it comes from the captured driver offset).</summary>
+        public bool LearnSeated { get; set; } = true;
         /// <summary>True when the last check matched the seated reference rather than the empty one.</summary>
         public bool LastWasSeated { get; private set; }
         public long Checks { get; private set; }
@@ -64,6 +66,8 @@ namespace SimSpares.AdaptiveMotion.Core
         {
             SeatedPitchDeg = pitchDeg; SeatedRollDeg = rollDeg; HasSeatedReference = true;
         }
+
+        public void ClearSeatedReference() { HasSeatedReference = false; }
 
         /// <summary>Forget the parked pose; the next park learns it again (after re-mounting or re-levelling).</summary>
         public void ClearReference()
@@ -103,6 +107,7 @@ namespace SimSpares.AdaptiveMotion.Core
             Checks++;
             if (!HasReference)
             {
+                if (AfterSession) { State = ParkState.Parked; return; }   // driver probably still seated: learn the empty pose later
                 SetReference(LastPitchDeg, LastRollDeg);
                 LastDeviationDeg = 0;
                 ReferenceLearned?.Invoke(LastPitchDeg, LastRollDeg);
@@ -112,7 +117,7 @@ namespace SimSpares.AdaptiveMotion.Core
             double dSeated = HasSeatedReference ? Dist(LastPitchDeg - SeatedPitchDeg, LastRollDeg - SeatedRollDeg) : double.PositiveInfinity;
             // The driver's weight tilts the seat a little: right after a session, a park that is off the empty
             // pose by a plausible seat-flex amount becomes the "seated" reference instead of a mount warning.
-            if (dEmpty > _s.ToleranceDeg && dSeated > _s.ToleranceDeg && !HasSeatedReference && AfterSession && dEmpty <= _s.SeatedMaxDeg)
+            if (dEmpty > _s.ToleranceDeg && dSeated > _s.ToleranceDeg && !HasSeatedReference && LearnSeated && AfterSession && dEmpty <= _s.SeatedMaxDeg)
             {
                 SetSeatedReference(LastPitchDeg, LastRollDeg);
                 dSeated = 0;

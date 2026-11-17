@@ -12,7 +12,7 @@
     <LangVersion>7.3</LangVersion>
     <AssemblyName>SimSpares.AdaptiveMotion</AssemblyName>
     <RootNamespace>SimSpares.AdaptiveMotion</RootNamespace>
-    <Version>1.3.13</Version>
+    <Version>1.3.14</Version>
     <Authors>Haarie / Sim-Spares</Authors>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>

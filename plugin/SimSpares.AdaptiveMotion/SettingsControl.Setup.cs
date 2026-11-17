@@ -124,20 +124,27 @@ namespace SimSpares.AdaptiveMotion
                      "Current: " + s.Packet.Describe() + ".")));
 
             // 5 ---------------------------------------------------------------------------------
-            root.Children.Add(Step("5. Neutral and level (rig at its centre, game closed)",
+            root.Children.Add(Step("5. Neutral, level and driver offset (rig at its centre, game closed)",
                 () =>
                 {
-                    if (s.Neutral == null && !s.LevelCaptured) return Todo("Set the neutral (Use centre), then capture the level.");
+                    if (s.Neutral == null && !s.LevelCaptured) return Todo("Set the neutral (Use centre), then capture the level with the rig empty.");
                     if (s.Neutral == null) return Todo("Set the neutral: press Use centre.");
-                    if (!s.LevelCaptured) return Todo("Capture the level.");
-                    return Done(string.Format(CultureInfo.InvariantCulture, "Neutral {0}; level pitch {1:F2}°, roll {2:F2}°.",
-                        string.Join(" / ", s.Neutral.Select(v => v.ToString("F0", CultureInfo.InvariantCulture))), s.LevelPitchDeg, s.LevelRollDeg));
+                    if (!s.LevelCaptured) return Todo("Capture the level with the rig EMPTY.");
+                    string lvl = string.Format(CultureInfo.InvariantCulture, "Neutral {0}; level pitch {1:F2}°, roll {2:F2}° (empty rig)",
+                        string.Join(" / ", s.Neutral.Select(v => v.ToString("F0", CultureInfo.InvariantCulture))), s.LevelPitchDeg, s.LevelRollDeg);
+                    if (!s.DriverOffsetCaptured) return Done(lvl + ". Optional: sit in the seat and capture the driver offset.");
+                    return Done(lvl + string.Format(CultureInfo.InvariantCulture, "; driver offset pitch {0:+0.00;-0.00}°, roll {1:+0.00;-0.00}°.", s.DriverOffsetPitchDeg, s.DriverOffsetRollDeg));
                 },
                 Buttons(Btn("Use centre for neutral (recommended)", () => _p.UseCentreNeutral()),
-                        Btn("Capture neutral from SimHub", () => _p.StartNeutralCapture()),
-                        Btn("Capture level", () => _p.StartLevelCapture())),
+                        Btn("Capture neutral from SimHub", () => _p.StartNeutralCapture())),
+                Buttons(Btn("Capture level (rig EMPTY)", () => _p.StartLevelCapture()),
+                        Btn("Capture driver offset (you in the seat)", () => _p.StartDriverOffsetCapture()),
+                        Btn("Clear driver offset", () => _p.ClearDriverOffset())),
                 Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
-                     "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still).")));
+                     "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still)."),
+                Hint("Level: capture it with nobody in the seat; the verification test also runs with the rig empty. " +
+                     "Driver offset: then sit in your normal driving position and capture it. Your weight tilts the seat a little; " +
+                     "the plugin takes that out while a game runs, so your driving position reads 0°, and the park check knows both positions.")));
 
             // 6 ---------------------------------------------------------------------------------
             root.Children.Add(Step("6. Verify: commanded vs measured",
