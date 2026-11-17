@@ -36,6 +36,9 @@ namespace SimSpares.AdaptiveMotion
         public ParkSettings Park = new ParkSettings();
         public bool ParkReferenceLearned = false;
         public double ParkPitchDeg = 0;
+        public bool ParkSeatedLearned = false;
+        public double ParkSeatedPitchDeg = 0, ParkSeatedRollDeg = 0;
+        public bool ControllerLimitsFollowSimHub = true;   // the plugin's own pitch/roll limits = SimHub's limits
         public double ParkRollDeg = 0;
 
         // --- behaviour ----------------------------------------------------------------------

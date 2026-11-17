@@ -32,6 +32,7 @@ namespace SimSpares.AdaptiveMotion
         internal readonly UpdateService Updater = new UpdateService();
         private System.Threading.CancellationTokenSource _fwCts;
         private volatile bool _gameRunning;
+        private double _gameStoppedSec = double.NaN;   // when the last game session ended
         // logging
         private double _nextLogSec;
         private bool _autoLogging;
@@ -81,6 +82,14 @@ namespace SimSpares.AdaptiveMotion
             Controller = new AdaptiveGainController(Settings.Controller);
             Park = new ParkMonitor(Settings.Park);
             if (Settings.ParkReferenceLearned) Park.SetReference(Settings.ParkPitchDeg, Settings.ParkRollDeg);
+            if (Settings.ParkReferenceLearned && Settings.ParkSeatedLearned) Park.SetSeatedReference(Settings.ParkSeatedPitchDeg, Settings.ParkSeatedRollDeg);
+            Park.SeatedReferenceLearned += (p, r) =>
+            {
+                Settings.ParkSeatedLearned = true; Settings.ParkSeatedPitchDeg = p; Settings.ParkSeatedRollDeg = r;
+                SaveSettings();
+                Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "Parked pose with the driver seated learned: pitch {0:F2}°, roll {1:F2}° (seat flex, not a mount shift)", p, r));
+            };
             Park.ReferenceLearned += (p, r) =>
             {
                 Settings.ParkReferenceLearned = true; Settings.ParkPitchDeg = p; Settings.ParkRollDeg = r;
@@ -116,6 +125,7 @@ namespace SimSpares.AdaptiveMotion
             RegisterActionsAndEvents();
             ApplySettings();
             CheckSimHubMotionAtStart();
+            SyncControllerLimits();
             Note("Initialised, plugin " + UpdateService.InstalledPluginVersion);
             if (Settings.UpdateCheckOnStart)
                 System.Threading.Tasks.Task.Delay(15000).ContinueWith(_ => CheckForUpdates());
@@ -372,6 +382,7 @@ namespace SimSpares.AdaptiveMotion
             if (r.OutputHost != "" && !local) { s.ProxyTargetHost = r.OutputHost; s.ProxyTargetPort = r.OutputPort; }
             SaveSettings();
             ApplySettings();
+            SyncControllerLimits();
             var msg = "Imported from " + r.Summary() + "." + (r.Packet != null ? " Packet format: " + r.Packet.Describe() + "." : "");
             if (local && r.OutputPort == s.ProxyListenPort) msg += " SimHub already sends to the plugin.";
             if (r.Notes.Count > 0) msg += " " + string.Join(" ", r.Notes);
@@ -485,6 +496,15 @@ namespace SimSpares.AdaptiveMotion
         }
 
         /// <summary>Copy the SimHub limits into the plugin's own envelope (gain reduction starts there, trips a bit beyond).</summary>
+        /// <summary>Keep the plugin's own limits equal to SimHub's (when that option is on and they differ).</summary>
+        private void SyncControllerLimits()
+        {
+            var r = Settings.Rig; var c = Settings.Controller;
+            if (!Settings.ControllerLimitsFollowSimHub || !(r.MaxPitchDeg > 0) || !(r.MaxRollDeg > 0)) return;
+            if (Math.Abs(c.PitchLimitDeg - r.MaxPitchDeg) < 1e-6 && Math.Abs(c.RollLimitDeg - r.MaxRollDeg) < 1e-6) return;
+            ApplyRigLimitsToController();
+        }
+
         public void ApplyRigLimitsToController()
         {
             var r = Settings.Rig; var c = Settings.Controller;
@@ -519,6 +539,7 @@ namespace SimSpares.AdaptiveMotion
             if (Settings.LevelCaptured)
             {
                 Controller.Update(st);
+                Park.AfterSession = !double.IsNaN(_gameStoppedSec) && now - _gameStoppedSec < Settings.Park.AfterSessionSec;
                 Park.Update(st, _gameRunning);
             }
             PitchTracking.Push(_cmdPitch, st.PitchDeg);
@@ -552,7 +573,7 @@ namespace SimSpares.AdaptiveMotion
                 Settings.LevelCaptured = true;
                 Estimator.SetLevelReference(Settings.LevelPitchDeg, Settings.LevelRollDeg);
                 // angles are now measured against a new level: the stored parked pose is meaningless
-                Settings.ParkReferenceLearned = false;
+                Settings.ParkReferenceLearned = false; Settings.ParkSeatedLearned = false;
                 Park.ClearReference();
                 SaveSettings();
                 Note(string.Format("Level captured: pitch {0:F2}°, roll {1:F2}°", Settings.LevelPitchDeg, Settings.LevelRollDeg));
@@ -569,6 +590,7 @@ namespace SimSpares.AdaptiveMotion
             double now = ImuSerialLink.NowSec;
             bool wasRunning = _gameRunning;
             _gameRunning = data.GameRunning;
+            if (wasRunning && !_gameRunning) _gameStoppedSec = now;
             Controller.Tick(now);
             ReadGameData(data);
             if (_gameRunning && Verifying) StopVerification("a game started");
@@ -742,7 +764,7 @@ namespace SimSpares.AdaptiveMotion
             Settings.LevelCaptured = true;               // "up" was measured at the level pose
             Settings.LevelPitchDeg = 0; Settings.LevelRollDeg = 0;
             Estimator.SetMountingVectors(fwd, up);
-            Settings.ParkReferenceLearned = false;       // new frame of reference: re-learn the parked pose
+            Settings.ParkReferenceLearned = false; Settings.ParkSeatedLearned = false;       // new frame of reference: re-learn the parked pose
             Park.ClearReference();
             SaveSettings();
             Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -760,7 +782,7 @@ namespace SimSpares.AdaptiveMotion
         /// <summary>Forget the parked pose; it is learned again at the next park (use after re-mounting the box).</summary>
         public void RelearnParkPose()
         {
-            Settings.ParkReferenceLearned = false;
+            Settings.ParkReferenceLearned = false; Settings.ParkSeatedLearned = false;
             Park.ClearReference();
             SaveSettings();
             Note("Parked pose cleared — it will be learned at the next park");
@@ -852,14 +874,24 @@ namespace SimSpares.AdaptiveMotion
         }
 
         // Game values are read by name (reflection) so a SimHub version without one of them still loads the plugin.
-        private static readonly System.Collections.Generic.Dictionary<string, System.Reflection.PropertyInfo> _propCache =
-            new System.Collections.Generic.Dictionary<string, System.Reflection.PropertyInfo>();
+        // (SimHub exposes some of them as fields, e.g. GameData.NewData, so fields are looked up too.)
+        private static readonly System.Collections.Generic.Dictionary<string, Func<object, object>> _propCache =
+            new System.Collections.Generic.Dictionary<string, Func<object, object>>();
         private static object Prop(object o, string name)
         {
             if (o == null) return null;
             string key = o.GetType().FullName + "." + name;
-            if (!_propCache.TryGetValue(key, out var pi)) { pi = o.GetType().GetProperty(name); _propCache[key] = pi; }
-            try { return pi?.GetValue(o, null); } catch { return null; }
+            Func<object, object> get;
+            lock (_propCache)
+                if (!_propCache.TryGetValue(key, out get))
+                {
+                    var t = o.GetType();
+                    var pi = t.GetProperty(name);
+                    var fi = pi == null ? t.GetField(name) : null;
+                    get = pi != null ? (Func<object, object>)(x => pi.GetValue(x, null)) : fi != null ? (Func<object, object>)(x => fi.GetValue(x)) : (x => null);
+                    _propCache[key] = get;
+                }
+            try { return get(o); } catch { return null; }
         }
         private static double Num(object v)
         {

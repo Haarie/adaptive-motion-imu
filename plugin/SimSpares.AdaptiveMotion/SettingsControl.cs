@@ -106,8 +106,9 @@ namespace SimSpares.AdaptiveMotion
             // ---------------- Envelope ----------------------------------------------------------
             var c = s.Controller;
             root.Children.Add(Header("Envelope measured at the seat"));
-            root.Children.Add(Row("Pitch limit (deg)", Num(c.PitchLimitDeg, v => c.PitchLimitDeg = v)));
-            root.Children.Add(Row("Roll limit (deg)", Num(c.RollLimitDeg, v => c.RollLimitDeg = v)));
+            root.Children.Add(Row("Pitch/roll limits follow SimHub", Check(s.ControllerLimitsFollowSimHub, v => s.ControllerLimitsFollowSimHub = v)));
+            root.Children.Add(Row("Pitch limit (deg)", Num(c.PitchLimitDeg, v => { c.PitchLimitDeg = v; s.ControllerLimitsFollowSimHub = false; })));
+            root.Children.Add(Row("Roll limit (deg)", Num(c.RollLimitDeg, v => { c.RollLimitDeg = v; s.ControllerLimitsFollowSimHub = false; })));
             root.Children.Add(Row("Angular rate limit (deg/s)", Num(c.RateLimitDps, v => c.RateLimitDps = v)));
             root.Children.Add(Row("Heave cue limit (g)", Num(c.HeaveLimitG, v => c.HeaveLimitG = v)));
             root.Children.Add(Row("Horizontal cue limit (g)", Num(c.CueLimitG, v => c.CueLimitG = v)));

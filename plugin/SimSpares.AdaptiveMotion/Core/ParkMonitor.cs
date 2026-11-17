@@ -7,6 +7,8 @@ namespace SimSpares.AdaptiveMotion.Core
         public double SettleSec = 1.0;       // extra wait after the firmware reports "still" (it already needs 2 s)
         public double AverageSec = 2.0;      // average the parked pose over this long
         public double ToleranceDeg = 0.5;    // parked pose may differ this much from the reference
+        public double SeatedMaxDeg = 1.5;    // a driver in the seat may tilt the parked pose up to this much (seat/frame flex)
+        public double AfterSessionSec = 180; // a park this soon after a game session is assumed to have the driver still seated
     }
 
     public enum ParkState { Moving, Settling, Measuring, Parked }
@@ -32,10 +34,20 @@ namespace SimSpares.AdaptiveMotion.Core
         public double LastRollDeg { get; private set; } = double.NaN;
         public double LastDeviationDeg { get; private set; } = double.NaN;
         public bool MountShifted { get; private set; }
+        /// <summary>Parked pose with the driver still in the seat (learned on the first park after a session).</summary>
+        public bool HasSeatedReference { get; private set; }
+        public double SeatedPitchDeg { get; private set; }
+        public double SeatedRollDeg { get; private set; }
+        /// <summary>Set by the caller: true while this park follows a game session closely (driver probably seated).</summary>
+        public bool AfterSession { get; set; }
+        /// <summary>True when the last check matched the seated reference rather than the empty one.</summary>
+        public bool LastWasSeated { get; private set; }
         public long Checks { get; private set; }
 
         /// <summary>First parked pose stored (pitch, roll). Persist it.</summary>
         public event Action<double, double> ReferenceLearned;
+        /// <summary>Parked pose with the driver seated stored (pitch, roll). Persist it.</summary>
+        public event Action<double, double> SeatedReferenceLearned;
         /// <summary>A park check finished: deviation in degrees, shifted yes/no.</summary>
         public event Action<double, bool> Checked;
 
@@ -48,10 +60,15 @@ namespace SimSpares.AdaptiveMotion.Core
             RefPitchDeg = pitchDeg; RefRollDeg = rollDeg; HasReference = true; MountShifted = false;
         }
 
+        public void SetSeatedReference(double pitchDeg, double rollDeg)
+        {
+            SeatedPitchDeg = pitchDeg; SeatedRollDeg = rollDeg; HasSeatedReference = true;
+        }
+
         /// <summary>Forget the parked pose; the next park learns it again (after re-mounting or re-levelling).</summary>
         public void ClearReference()
         {
-            HasReference = false; MountShifted = false; LastDeviationDeg = double.NaN;
+            HasReference = false; HasSeatedReference = false; MountShifted = false; LastDeviationDeg = double.NaN;
             if (State == ParkState.Parked) State = ParkState.Moving;   // re-measure on the next still period
         }
 
@@ -91,10 +108,22 @@ namespace SimSpares.AdaptiveMotion.Core
                 ReferenceLearned?.Invoke(LastPitchDeg, LastRollDeg);
                 return;
             }
-            double dp = LastPitchDeg - RefPitchDeg, dr = LastRollDeg - RefRollDeg;
-            LastDeviationDeg = Math.Sqrt(dp * dp + dr * dr);
+            double dEmpty = Dist(LastPitchDeg - RefPitchDeg, LastRollDeg - RefRollDeg);
+            double dSeated = HasSeatedReference ? Dist(LastPitchDeg - SeatedPitchDeg, LastRollDeg - SeatedRollDeg) : double.PositiveInfinity;
+            // The driver's weight tilts the seat a little: right after a session, a park that is off the empty
+            // pose by a plausible seat-flex amount becomes the "seated" reference instead of a mount warning.
+            if (dEmpty > _s.ToleranceDeg && dSeated > _s.ToleranceDeg && !HasSeatedReference && AfterSession && dEmpty <= _s.SeatedMaxDeg)
+            {
+                SetSeatedReference(LastPitchDeg, LastRollDeg);
+                dSeated = 0;
+                SeatedReferenceLearned?.Invoke(LastPitchDeg, LastRollDeg);
+            }
+            LastWasSeated = dSeated < dEmpty;
+            LastDeviationDeg = Math.Min(dEmpty, dSeated);
             MountShifted = LastDeviationDeg > _s.ToleranceDeg;   // latched until the next park check or a reset
             Checked?.Invoke(LastDeviationDeg, MountShifted);
         }
+
+        private static double Dist(double a, double b) => Math.Sqrt(a * a + b * b);
     }
 }

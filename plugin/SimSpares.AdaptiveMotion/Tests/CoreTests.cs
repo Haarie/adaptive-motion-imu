@@ -350,6 +350,27 @@ static class CoreTests
         run(-2.0, 0.2, true, false, 4);     // still parked -> re-measures and learns the new pose
         Check(pm.HasReference && Near(pm.RefPitchDeg, -2.0, 1e-6), "re-learn after clear, " + pm.RefPitchDeg);
 
+        // driver still seated after a session: ~0.55 deg of seat flex is learned as the seated pose, not a warning
+        var pm3 = new ParkMonitor(new ParkSettings()); double t3 = 0; int seatedLearned = 0, warns = 0;
+        pm3.SeatedReferenceLearned += (p, r) => seatedLearned++;
+        pm3.Checked += (d, sh) => { if (sh) warns++; };
+        Action<double, bool> park3 = (pitch, after) =>
+        {
+            pm3.AfterSession = after;
+            for (int i = 0; i < 500; i++) { t3 += 0.004; pm3.Update(new PlatformState { TimeSec = t3 }, false); }                          // moving
+            for (int i = 0; i < 1250; i++) { t3 += 0.004; pm3.Update(new PlatformState { PitchDeg = pitch, TimeSec = t3, Flags = ImuFlags.Still }, false); }
+        };
+        park3(-0.01, false);                 // empty rig: reference
+        park3(-0.56, false);                 // 0.55 off, but not after a session: warning (could be a real shift)
+        Check(warns == 1 && seatedLearned == 0, "seat-flex offset outside a session still warns");
+        park3(-0.56, true);                  // right after a session with the driver seated: learned as seated pose
+        Check(seatedLearned == 1 && warns == 1 && !pm3.MountShifted && pm3.LastWasSeated, "first park after a session learns the seated pose");
+        park3(-0.60, true);                  // next session: matches the seated pose
+        park3(0.02, false);                  // driver out: matches the empty pose
+        Check(warns == 1 && !pm3.MountShifted && !pm3.LastWasSeated, "seated and empty poses both pass afterwards");
+        park3(-2.5, true);                   // 2.5 deg off both: real shift, never learned as seated
+        Check(warns == 2 && pm3.MountShifted && seatedLearned == 1, "large offset after a session still warns");
+
         // brief stillness shorter than settle + average never completes a check
         var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;
         pm2.ReferenceLearned += (p, r) => c2++;
