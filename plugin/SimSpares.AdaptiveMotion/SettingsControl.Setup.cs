@@ -17,6 +17,7 @@ namespace SimSpares.AdaptiveMotion
         private TabControl _tabs;
         private TabItem _verifyTab;
         private TextBlock _vBlockers, _vFindings, _vNullcat;
+        private readonly List<CheckBox> _autoUnparkBoxes = new List<CheckBox>();   // same setting on step 5 and the Verify tab, kept in sync
         private Button _vRun, _vStop, _vRange;
 
         private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0x3F, 0xB9, 0x50));
@@ -142,6 +143,7 @@ namespace SimSpares.AdaptiveMotion
                         Btn("Capture driver offset at centre (you in the seat)", () => CentreCapture(true)),
                         Btn("Stop", () => _p.StopCentreCapture()),
                         Btn("Clear driver offset", () => _p.ClearDriverOffset())),
+                Inline("Unpark nullCAT automatically (after the safety check)", AutoUnparkBox()),
                 Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
                      "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still)."),
                 Hint("Level: the plugin brings the rig out of park, rig active at its centre (not parked), the position SimHub uses for zero, and captures it there, with nobody in the seat; the verification test also runs with the rig empty. " +
@@ -268,7 +270,7 @@ namespace SimSpares.AdaptiveMotion
             var opts = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
             opts.Children.Add(Inline("Speed (deg/s)", Num(o.RampDps, v => { o.RampDps = Math.Max(0.5, Math.Min(15, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Tolerance (%)", Num(o.TolPct, v => { o.TolPct = Math.Max(1, Math.Min(20, v)); _p.SaveSettings(); })));
-            opts.Children.Add(Inline("Unpark nullCAT automatically (after the safety check)", Check(s.NullcatAutoUnpark, v => { s.NullcatAutoUnpark = v; _p.SaveSettings(); })));
+            opts.Children.Add(Inline("Unpark nullCAT automatically (after the safety check)", AutoUnparkBox()));
             opts.Children.Add(Inline("Hold at centre after test (s)", Num(o.HoldSec, v => { o.HoldSec = Math.Max(0, Math.Min(60, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Min tolerance (deg)", Num(o.TolMinDeg, v => { o.TolMinDeg = Math.Max(0.1, Math.Min(2, v)); _p.SaveSettings(); })));
             top.Children.Add(opts);
@@ -284,6 +286,18 @@ namespace SimSpares.AdaptiveMotion
             dock.Children.Add(_vFindings);
             dock.Children.Add(new VerifyChart(_p));
             return dock;
+        }
+
+        private CheckBox AutoUnparkBox()
+        {
+            var cb = Check(_p.Settings.NullcatAutoUnpark, v =>
+            {
+                _p.Settings.NullcatAutoUnpark = v; _p.SaveSettings();
+                foreach (var o in _autoUnparkBoxes) if (o.IsChecked != v) o.IsChecked = v;
+            });
+            cb.ToolTip = "When nullCAT is parked, the plugin sends /api/unpark itself after you have confirmed the safety check. nullCAT still refuses it during an e-stop or before homing.";
+            _autoUnparkBoxes.Add(cb);
+            return cb;
         }
 
         private void CentreCapture(bool driver)
