@@ -172,7 +172,7 @@ namespace SimSpares.AdaptiveMotion
 
         /// <summary>Gains are applied to UDP packets only when every precondition holds.</summary>
         public bool ProxyActive => Settings.Mode == ApplyMode.UdpProxy && Settings.AdaptiveEnabled
-                                   && Settings.LevelCaptured && VerificationValid && !Verifying;
+                                   && Settings.LevelCaptured && VerificationValid && !Verifying && !CentreRunning;
 
         // ======================================================================================
         // Verification (static test: commanded pose vs measured seat attitude)
@@ -200,23 +200,27 @@ namespace SimSpares.AdaptiveMotion
         public VerificationRun RunForDisplay { get { lock (VerifyLock) return _verifyRun ?? _lastRun; } }
 
         /// <summary>Why the test cannot start right now (empty list = ready).</summary>
-        public System.Collections.Generic.List<string> VerifyBlockers()
+        public System.Collections.Generic.List<string> VerifyBlockers() => Blockers(false);
+
+        /// <summary>What prevents the plugin from driving the rig (test or centre capture).</summary>
+        private System.Collections.Generic.List<string> Blockers(bool centreRun)
         {
             var b = new System.Collections.Generic.List<string>();
             var s = Settings;
             if (!SensorFresh) b.Add("the IMU box is not sending data");
-            if (!s.LevelCaptured) b.Add("capture the level first (rig parked at its centre)");
+            if (!centreRun && !s.LevelCaptured) b.Add("capture the level first (Setup step 5: Capture level at centre)");
+            if (CentreRunning || (centreRun && Verifying)) b.Add("a test or centre capture is already running");
             string geo = s.Rig.Problem(s.Actuators, s.Packet);
             if (geo != null) b.Add(geo);
             if (s.Mode != ApplyMode.UdpProxy) b.Add("set the mode to UDP proxy (the test drives the rig through the proxy)");
             else if (!Proxy.Running) b.Add("the UDP proxy is not running: check the controller host/port and Save & apply");
             else if (!Proxy.HasTemplate)
                 b.Add("the packet format is not known yet: start SimHub motion once (a game or SimHub's motion test) with SimHub sending to 127.0.0.1:" + s.ProxyListenPort);
-            else if (!double.IsNaN(Proxy.LastPacketSec) && ImuSerialLink.NowSec - Proxy.LastPacketSec < 1 && !Verifying)
+            else if (!double.IsNaN(Proxy.LastSimHubSec) && ImuSerialLink.NowSec - Proxy.LastSimHubSec < 1)
                 b.Add("SimHub is sending motion right now: stop the game / motion test so only the test drives the rig");
             if (s.Neutral == null) b.Add("set the neutral (Setup step 5: Use centre)");
             if (_gameRunning) b.Add("stop the game: the test only runs with the game closed or idle in the menu");
-            if (geo == null && s.Neutral != null && s.Neutral.Length >= s.Rig.Count)
+            if (!centreRun && geo == null && s.Neutral != null && s.Neutral.Length >= s.Rig.Count)
             {
                 double need = 0, frac = Math.Min(1, s.Verify.MaxFractionPct / 100);
                 foreach (var z in s.Rig.HeightsMm(s.Rig.MaxPitchDeg * frac, 0)) need = Math.Max(need, Math.Abs(z));
@@ -258,6 +262,98 @@ namespace SimSpares.AdaptiveMotion
                 why = e.Message;
                 return false;
             }
+        }
+
+        // ======================================================================================
+        // Centre capture: the plugin holds the rig at its centre (neutral), waits until it is still,
+        // captures the level (rig empty) or the driver offset (driver seated), holds, then hands back.
+        // ======================================================================================
+        private volatile int _centrePhase;            // 0 idle, 1 moving to centre, 2 capturing, 3 holding, 4 done
+        private double _centreT0 = double.NaN, _centrePhaseT = double.NaN, _stillSince = double.NaN;
+        private bool _centreDriver;
+        private double[] _centreValues;
+        public bool CentreRunning => _centrePhase != 0;
+        public string CentreStatus
+        {
+            get
+            {
+                switch (_centrePhase)
+                {
+                    case 1: return "Moving to centre, waiting until the rig is still…";
+                    case 2: return "Capturing…";
+                    case 3: return "Captured; holding at centre…";
+                    default: return null;
+                }
+            }
+        }
+        public System.Collections.Generic.List<string> CentreBlockers(bool driver)
+        {
+            var b = Blockers(true);
+            if (driver && !Settings.LevelCaptured) b.Add("capture the level first (rig empty)");
+            return b;
+        }
+
+        public bool StartCentreCapture(bool driver, out string why)
+        {
+            var b = CentreBlockers(driver);
+            if (b.Count > 0) { why = string.Join("; ", b); return false; }
+            _centreDriver = driver;
+            _centreValues = (double[])Settings.Neutral.Clone();
+            _centreT0 = ImuSerialLink.NowSec; _centrePhaseT = double.NaN; _stillSince = double.NaN;
+            _centrePhase = 1;
+            Proxy.BeginOverride(() => _centreValues);
+            LogEvent(driver ? "CENTRE CAPTURE DRIVER" : "CENTRE CAPTURE LEVEL");
+            Note(driver ? "Driver offset: moving the rig to its centre; sit still in your driving position"
+                        : "Level: moving the rig to its centre; keep the rig EMPTY and clear");
+            why = null;
+            return true;
+        }
+
+        public void StopCentreCapture()
+        {
+            if (_centrePhase == 0) return;
+            if (_centrePhase == 2) { _levelUntil = double.NaN; Note("Centre capture stopped: nothing saved"); }
+            _centrePhase = 4;
+        }
+
+        // IMU thread
+        private void CentreTick(double now, PlatformState st)
+        {
+            switch (_centrePhase)
+            {
+                case 1:
+                    bool still = (st.Flags & ImuFlags.Still) != 0;
+                    if (!still) _stillSince = double.NaN;
+                    else if (double.IsNaN(_stillSince)) _stillSince = now;
+                    if (now - _centreT0 >= 3 && !double.IsNaN(_stillSince) && now - _stillSince >= 1.0)
+                    {
+                        _levelIsDriver = _centreDriver;
+                        _levelSumP = _levelSumR = 0; _levelN = 0;
+                        _levelUntil = now + 1.5;
+                        _centrePhase = 2;
+                    }
+                    else if (now - _centreT0 > 20)
+                    {
+                        Note("Centre capture stopped: the rig did not stand still within 20 s (nothing saved)");
+                        _centrePhase = 4;
+                    }
+                    break;
+                case 2:
+                    if (double.IsNaN(_levelUntil)) { _centrePhase = 3; _centrePhaseT = now; }   // capture finished (or failed)
+                    break;
+                case 3:
+                    if (now - _centrePhaseT >= Settings.Verify.HoldSec) _centrePhase = 4;
+                    break;
+            }
+        }
+
+        // SimHub thread
+        private void FinishCentreIfDone()
+        {
+            if (_centrePhase != 4) return;
+            Proxy.EndOverride();
+            _centrePhase = 0;
+            LogEvent("CENTRE CAPTURE END");
         }
 
         public void StopVerification(string reason = "stopped by user")
@@ -505,7 +601,9 @@ namespace SimSpares.AdaptiveMotion
         {
             var r = Settings.Rig; var c = Settings.Controller;
             if (!Settings.ControllerLimitsFollowSimHub || !(r.MaxPitchDeg > 0) || !(r.MaxRollDeg > 0)) return;
-            if (Math.Abs(c.PitchLimitDeg - r.MaxPitchDeg) < 1e-6 && Math.Abs(c.RollLimitDeg - r.MaxRollDeg) < 1e-6) return;
+            if (Math.Abs(c.PitchLimitDeg - r.MaxPitchDeg) < 1e-6 && Math.Abs(c.RollLimitDeg - r.MaxRollDeg) < 1e-6
+                && Math.Abs(c.PitchHardDeg - RigGeometry.HardTrip(r.MaxPitchDeg, r.MechanicalMaxDeg(true))) < 0.05
+                && Math.Abs(c.RollHardDeg - RigGeometry.HardTrip(r.MaxRollDeg, r.MechanicalMaxDeg(false))) < 0.05) return;
             ApplyRigLimitsToController();
         }
 
@@ -514,10 +612,10 @@ namespace SimSpares.AdaptiveMotion
             var r = Settings.Rig; var c = Settings.Controller;
             if (!(r.MaxPitchDeg > 0) || !(r.MaxRollDeg > 0)) { Note("Enter the SimHub pitch and roll limits first"); return; }
             c.PitchLimitDeg = r.MaxPitchDeg; c.RollLimitDeg = r.MaxRollDeg;
-            c.PitchHardDeg = Math.Round(r.MaxPitchDeg * 1.2 + 1, 1); c.RollHardDeg = Math.Round(r.MaxRollDeg * 1.2 + 1, 1);
+            c.PitchHardDeg = RigGeometry.HardTrip(r.MaxPitchDeg, r.MechanicalMaxDeg(true)); c.RollHardDeg = RigGeometry.HardTrip(r.MaxRollDeg, r.MechanicalMaxDeg(false));
             Controller.UpdateSettings(c);
             SaveSettings();
-            Note(string.Format(System.Globalization.CultureInfo.InvariantCulture, "Plugin limits set from SimHub: pitch {0}°, roll {1}° (hard trip {2}° / {3}°)", c.PitchLimitDeg, c.RollLimitDeg, c.PitchHardDeg, c.RollHardDeg));
+            Note(string.Format(System.Globalization.CultureInfo.InvariantCulture, "Plugin limits set from SimHub: pitch {0}°, roll {1}° (hard trip {2}° / {3}°; rig maximum {4:F1}° / {5:F1}°)", c.PitchLimitDeg, c.RollLimitDeg, c.PitchHardDeg, c.RollHardDeg, r.MechanicalMaxDeg(true), r.MechanicalMaxDeg(false)));
         }
 
         // ======================================================================================
@@ -535,6 +633,7 @@ namespace SimSpares.AdaptiveMotion
                 if (now >= _alignUntil) FinishAlignCapture();
             }
 
+            if (_centrePhase != 0) CentreTick(now, st);
             if (!double.IsNaN(_levelUntil))
             {
                 _levelSumP += Estimator.RawPitchDeg; _levelSumR += Estimator.RawRollDeg; _levelN++;
@@ -544,6 +643,8 @@ namespace SimSpares.AdaptiveMotion
             if (Settings.LevelCaptured)
             {
                 Controller.Update(st);
+                Park.CommandActive = Verifying || CentreRunning
+                    || (Proxy.Running && !double.IsNaN(Proxy.LastSimHubSec) && now - Proxy.LastSimHubSec < 1.5);
                 Park.AfterSession = !double.IsNaN(_gameStoppedSec) && now - _gameStoppedSec < Settings.Park.AfterSessionSec;
                 Park.Update(st, _gameRunning);
             }
@@ -622,6 +723,7 @@ namespace SimSpares.AdaptiveMotion
             if (_gameRunning && Verifying) StopVerification("a game started");
             if (Verifying && !Proxy.Running) { lock (VerifyLock) { _lastRun = _verifyRun; _verifyRun = null; } Note("Verification stopped: the proxy stopped"); }
             FinishVerificationIfDone();
+            FinishCentreIfDone();
             NoteUnknownPackets();
             SaveTemplateOnce();
             if (Settings.LogAutoStart)
@@ -751,6 +853,7 @@ namespace SimSpares.AdaptiveMotion
             this.AddAction("ToggleAdaptive", (a, b) => { Settings.AdaptiveEnabled = !Settings.AdaptiveEnabled; Note("Adaptive " + (Settings.AdaptiveEnabled ? "ON" : "OFF")); });
             this.AddAction("CaptureLevel", (a, b) => StartLevelCapture());
             this.AddAction("CaptureDriverOffset", (a, b) => StartDriverOffsetCapture());
+            this.AddAction("CaptureLevelAtCentre", (a, b) => { if (!StartCentreCapture(false, out var w)) Note("Level at centre: " + w); });
             this.AddAction("GyroCalibrate", (a, b) => Imu.Send("GYROCAL"));
             this.AddAction("ResetTrip", (a, b) => { Controller.ResetTrip(); Note("Trip reset"); });
             this.AddAction("ResetGains", (a, b) => { Controller.ResetGains(); Note("Gains reset"); });
@@ -805,7 +908,7 @@ namespace SimSpares.AdaptiveMotion
             _levelIsDriver = false;
             _levelSumP = _levelSumR = 0; _levelN = 0;
             _levelUntil = ImuSerialLink.NowSec + 1.5;
-            Note("Capturing level for 1.5 s: rig EMPTY and at its centre position");
+            Note("Capturing level for 1.5 s: rig EMPTY and active at its centre (not parked)");
         }
 
         /// <summary>Driver in the seat, rig at its centre, no game: the seat attitude relative to the level becomes the driver offset.</summary>

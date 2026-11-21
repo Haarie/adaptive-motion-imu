@@ -40,6 +40,8 @@ namespace SimSpares.AdaptiveMotion.Core
         public double SeatedRollDeg { get; private set; }
         /// <summary>Set by the caller: true while this park follows a game session closely (driver probably seated).</summary>
         public bool AfterSession { get; set; }
+        /// <summary>Set by the caller while something commands motion (SimHub sending, a test): the rig is then not parked, even if it stands still.</summary>
+        public bool CommandActive { get; set; }
         /// <summary>When false, the seated pose is never learned automatically (it comes from the captured driver offset).</summary>
         public bool LearnSeated { get; set; } = true;
         /// <summary>True when the last check matched the seated reference rather than the empty one.</summary>
@@ -78,7 +80,7 @@ namespace SimSpares.AdaptiveMotion.Core
 
         public void Update(PlatformState st, bool gameRunning)
         {
-            bool still = (st.Flags & ImuFlags.Still) != 0 && (st.Flags & ImuFlags.I2cError) == 0 && !gameRunning;
+            bool still = (st.Flags & ImuFlags.Still) != 0 && (st.Flags & ImuFlags.I2cError) == 0 && !gameRunning && !CommandActive;
             double t = st.TimeSec;
             if (!still) { State = ParkState.Moving; return; }
 

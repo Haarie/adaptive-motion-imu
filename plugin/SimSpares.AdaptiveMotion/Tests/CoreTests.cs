@@ -130,6 +130,13 @@ static class CoreTests
         e.SetLevelReference(0, 4);
         st = e.Update(FrameFromEuler(4, 0), 0);
         Check(Near(st.RollDeg, 0, 0.01), "level reference removes offset");
+        // mechanical maximum and hard trip (4-corner 1250 x 660 mm, stroke 200 mm: SimHub reports 9.09° / 16.86°)
+        var gm = new RigGeometry { StrokeMm = 200, WheelbaseMm = 1250, TrackMm = 660 };
+        gm.FillFromLayout(ActuatorLayout.FourCorner);
+        Check(Near(gm.MechanicalMaxDeg(true), 9.09, 0.02) && Near(gm.MechanicalMaxDeg(false), 16.86, 0.02), $"mechanical max {gm.MechanicalMaxDeg(true):F2}/{gm.MechanicalMaxDeg(false):F2}");
+        Check(Near(RigGeometry.HardTrip(5, 9.09), 7.0, 0.01) && Near(RigGeometry.HardTrip(7, 9.09), 8.8, 0.01) && Near(RigGeometry.HardTrip(7, 16.86), 9.4, 0.01)
+              && Near(RigGeometry.HardTrip(8.9, 9.09), 9.4, 0.01) && Near(RigGeometry.HardTrip(5, double.NaN), 7.0, 0.01), "hard trip capped below the rig maximum");
+
         // driver offset: subtracted only while active (driving)
         e.SetLevelReference(0, 0);
         e.SetDriverOffset(-0.6, 0.1);
@@ -398,6 +405,15 @@ static class CoreTests
         Check(learned4 == 1 && seated4 == 0 && warn4 == 0, "seated pose from the driver offset passes, empty passes");
         park4(-1.2, true);                   // 0.6 off the seated pose: warns, nothing learned
         Check(warn4 == 1 && seated4 == 0, "with a known offset nothing is learned and a shift warns");
+
+        // standing still while something commands motion (SimHub's motion test holding 6°) is not a park
+        var pm5 = new ParkMonitor(new ParkSettings()); double t5 = 0; int chk5 = 0; pm5.Checked += (d, sh) => chk5++;
+        pm5.SetReference(0, 0); pm5.CommandActive = true;
+        for (int i = 0; i < 1500; i++) { t5 += 0.004; pm5.Update(new PlatformState { PitchDeg = 6, TimeSec = t5, Flags = ImuFlags.Still }, false); }
+        Check(chk5 == 0 && !pm5.MountShifted, "no park check while motion is commanded");
+        pm5.CommandActive = false;
+        for (int i = 0; i < 1500; i++) { t5 += 0.004; pm5.Update(new PlatformState { PitchDeg = 0.1, TimeSec = t5, Flags = ImuFlags.Still }, false); }
+        Check(chk5 == 1 && !pm5.MountShifted, "park check once SimHub stops sending");
 
         // brief stillness shorter than settle + average never completes a check
         var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;

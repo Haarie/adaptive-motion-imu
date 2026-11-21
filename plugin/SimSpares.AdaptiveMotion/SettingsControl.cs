@@ -53,7 +53,7 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Row("Learn gyro bias whenever still", Check(s.AutoGyroCal, v => s.AutoGyroCal = v)));
             root.Children.Add(Row("Park check tolerance (deg)", Num(s.Park.ToleranceDeg, v => s.Park.ToleranceDeg = v)));
             root.Children.Add(Buttons(
-                Btn("Capture level (rig at centre)", () => _p.StartLevelCapture()),
+                Btn("Capture level here (rig must be active at its centre, not parked)", () => _p.StartLevelCapture()),
                 Btn("Re-learn parked pose", () => _p.RelearnParkPose()),
                 Btn("Show gyro bias", () => _p.Imu.Send("BIAS")),
                 Btn("Gyro calibrate (rig still)", () => _p.Imu.Send("GYROCAL")),
@@ -155,7 +155,7 @@ namespace SimSpares.AdaptiveMotion
             var liveGrid = new DockPanel { Margin = new Thickness(8) };
             var liveBar = Buttons(
                 Btn("Pop out window", () => VisualizerWindow.ShowFor(_p)),
-                Btn("Capture level (rig at centre)", () => _p.StartLevelCapture()),
+                Btn("Capture level here (rig must be active at its centre, not parked)", () => _p.StartLevelCapture()),
                 Btn("Reset trip", () => _p.Controller.ResetTrip()),
                 Btn("Toggle adaptive", () => { s.AdaptiveEnabled = !s.AdaptiveEnabled; _p.Note("Adaptive " + (s.AdaptiveEnabled ? "ON" : "OFF")); }),
                 _logBtnLive = Btn("Start log", ToggleLog));

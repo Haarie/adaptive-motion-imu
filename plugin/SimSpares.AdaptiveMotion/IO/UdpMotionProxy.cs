@@ -26,6 +26,8 @@ namespace SimSpares.AdaptiveMotion.IO
         public event Action<double, double> CommandModes;   // pitchMode, rollMode after each motion packet
         public long Forwarded { get; private set; }
         public double LastPacketSec { get; private set; } = double.NaN;
+        /// <summary>When SimHub itself last sent a packet (test packets from the plugin not counted).</summary>
+        public double LastSimHubSec { get; private set; } = double.NaN;
         public MotionPacketTransformer Transformer => _xf;
         public bool Running => _run;
 
@@ -145,6 +147,7 @@ namespace SimSpares.AdaptiveMotion.IO
                 {
                     if (MotionPacketCodec.IsMotionPacket(_xf.Layout, p, p.Length))
                     {
+                        LastSimHubSec = ImuSerialLink.NowSec;
                         if (_override != null) continue;   // test mode: the plugin drives the rig, SimHub's packet is dropped
                         lock (_tplLock) _template = original;
                     }

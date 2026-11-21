@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 
 namespace SimSpares.AdaptiveMotion.Core
@@ -25,6 +26,24 @@ namespace SimSpares.AdaptiveMotion.Core
         public double PivotOffsetMm = 0;    // 2-actuator rigs: actuators sit this far BEHIND the front pivot
 
         public int Count => ActuatorX == null ? 0 : ActuatorX.Length;
+
+        /// <summary>Hard trip: 1.2 × limit + 1°, but below what the rig can physically reach (else it could never fire), and at least limit + 0.5°.</summary>
+        public static double HardTrip(double limitDeg, double mechMaxDeg)
+        {
+            double h = limitDeg * 1.2 + 1;
+            if (!double.IsNaN(mechMaxDeg)) h = Math.Min(h, mechMaxDeg - 0.3);
+            return Math.Round(Math.Max(h, limitDeg + 0.5), 1);
+        }
+
+        /// <summary>Largest pitch (true) or roll (false) the rig can physically reach: full stroke over the actuator span. NaN if unknown.</summary>
+        public double MechanicalMaxDeg(bool pitch)
+        {
+            if (Count < 2 || !(StrokeMm > 0)) return double.NaN;
+            var a = pitch ? ActuatorX : ActuatorY;
+            double span = a.Max() - a.Min();
+            if (span < 1) return double.NaN;
+            return Math.Atan(StrokeMm / span) * 180 / Math.PI;
+        }
 
         /// <summary>Fill the actuator positions for a standard layout from track / wheelbase.</summary>
         public void FillFromLayout(ActuatorLayout layout)

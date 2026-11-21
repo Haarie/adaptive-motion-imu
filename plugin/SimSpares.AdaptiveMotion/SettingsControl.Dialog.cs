@@ -65,6 +65,34 @@ namespace SimSpares.AdaptiveMotion
             return ok;
         }
 
+        /// <summary>Confirmation before the plugin moves the rig to its centre to capture the level or the driver offset.</summary>
+        public static bool ConfirmCentreCapture(DependencyObject owner, bool driver, double holdSec)
+        {
+            var w = NewWindow(owner, driver ? "DRIVER OFFSET" : "LEVEL AT CENTRE", driver ? "YOU IN THE SEAT" : "RIG EMPTY", driver ? Accent : Safety, out var body, out var buttons);
+            body.Children.Add(Para(driver
+                ? "The plugin moves the rig to its centre (the position SimHub uses for zero), waits until it stands still and measures how much your weight tilts the seat. The rig does not move beyond its centre."
+                : "The plugin moves the rig out of park to its centre (the position SimHub uses for zero), waits until it stands still and captures the level there.", Ink, 0, 0, 0, 12));
+            var safety = new StackPanel();
+            safety.Children.Add(new TextBlock { Text = "⚠  SAFETY CHECK", FontFamily = Head, FontWeight = FontWeights.Bold, FontSize = 17, Foreground = Safety, Margin = new Thickness(0, 0, 0, 6) });
+            var checks = driver
+                ? new[] { Check("I sit in my normal driving position, hands off the wheel and pedals"), Check("Nobody else is within reach of the moving parts"), Check("The e-stop is within my reach") }
+                : new[] { Check("The seat is empty: nobody is in the rig"), Check("Nobody is within reach of the moving parts"), Check("The e-stop is within my reach") };
+            foreach (var c in checks) safety.Children.Add(c);
+            body.Children.Add(new Border { Child = safety, Background = Card, BorderBrush = Safety, BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(2), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 0, 0, 12) });
+            body.Children.Add(Para(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "Takes about 6–10 s. Afterwards the rig holds at centre for {0:F0} s, then the controller parks it. Stop ends it at any time without saving.", holdSec), Muted, 0, 0, 0, 0));
+            var cancel = MakeButton("CANCEL", false);
+            var start = MakeButton(driver ? "CAPTURE OFFSET" : "CAPTURE LEVEL", true);
+            start.IsEnabled = false;
+            foreach (var c in checks) { c.Checked += (o, e) => start.IsEnabled = checks.All(x => x.IsChecked == true); c.Unchecked += (o, e) => start.IsEnabled = false; }
+            bool ok = false;
+            cancel.Click += (o, e) => w.Close();
+            start.Click += (o, e) => { ok = true; w.Close(); };
+            buttons.Children.Add(cancel); buttons.Children.Add(start);
+            w.ShowDialog();
+            return ok;
+        }
+
         /// <summary>A message in the same style (blockers, errors).</summary>
         public static void Show(DependencyObject owner, string title, string intro, IEnumerable<string> points, Kind kind = Kind.Info)
         {

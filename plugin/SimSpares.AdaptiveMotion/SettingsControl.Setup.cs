@@ -124,9 +124,10 @@ namespace SimSpares.AdaptiveMotion
                      "Current: " + s.Packet.Describe() + ".")));
 
             // 5 ---------------------------------------------------------------------------------
-            root.Children.Add(Step("5. Neutral, level and driver offset (rig at its centre, game closed)",
+            root.Children.Add(Step("5. Neutral, level and driver offset (game closed)",
                 () =>
                 {
+                    if (_p.CentreRunning) return Todo(_p.CentreStatus);
                     if (s.Neutral == null && !s.LevelCaptured) return Todo("Set the neutral (Use centre), then capture the level with the rig empty.");
                     if (s.Neutral == null) return Todo("Set the neutral: press Use centre.");
                     if (!s.LevelCaptured) return Todo("Capture the level with the rig EMPTY.");
@@ -137,13 +138,14 @@ namespace SimSpares.AdaptiveMotion
                 },
                 Buttons(Btn("Use centre for neutral (recommended)", () => _p.UseCentreNeutral()),
                         Btn("Capture neutral from SimHub", () => _p.StartNeutralCapture())),
-                Buttons(Btn("Capture level (rig EMPTY)", () => _p.StartLevelCapture()),
-                        Btn("Capture driver offset (you in the seat)", () => _p.StartDriverOffsetCapture()),
+                Buttons(Btn("Capture level at centre (rig EMPTY)", () => CentreCapture(false)),
+                        Btn("Capture driver offset at centre (you in the seat)", () => CentreCapture(true)),
+                        Btn("Stop", () => _p.StopCentreCapture()),
                         Btn("Clear driver offset", () => _p.ClearDriverOffset())),
                 Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
                      "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still)."),
-                Hint("Level: capture it with nobody in the seat; the verification test also runs with the rig empty. " +
-                     "Driver offset: then sit in your normal driving position and capture it. Your weight tilts the seat a little; " +
+                Hint("Level: the plugin moves the rig to its centre (active, not parked: the position SimHub uses for zero) and captures it there, with nobody in the seat; the verification test also runs with the rig empty. " +
+                     "Driver offset: then sit in your normal driving position and capture it the same way. Your weight tilts the seat a little; " +
                      "the plugin takes that out while a game runs, so your driving position reads 0°, and the park check knows both positions.")));
 
             // 6 ---------------------------------------------------------------------------------
@@ -279,6 +281,15 @@ namespace SimSpares.AdaptiveMotion
             dock.Children.Add(_vFindings);
             dock.Children.Add(new VerifyChart(_p));
             return dock;
+        }
+
+        private void CentreCapture(bool driver)
+        {
+            var pre = _p.CentreBlockers(driver);
+            if (pre.Count > 0) { SsDialog.Show(this, "NOT READY", driver ? "The driver offset cannot be captured yet:" : "The level cannot be captured yet:", pre, SsDialog.Kind.Info); return; }
+            if (!SsDialog.ConfirmCentreCapture(this, driver, _p.Settings.Verify.HoldSec)) return;
+            if (!_p.StartCentreCapture(driver, out var why))
+                SsDialog.Show(this, "DID NOT START", "The capture did not start:", why.Split(new[] { "; " }, StringSplitOptions.RemoveEmptyEntries), SsDialog.Kind.Warning);
         }
 
         private void UpdateRangeButton()
