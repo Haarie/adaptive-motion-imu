@@ -420,6 +420,15 @@ static class CoreTests
         while (vl.Steps[0].Grade == VerifyGrade.Pending && tl < 30) { vl.Update(tl, 0, 0); tl += 0.01; }
         Check(tl >= 6 + 1.5 + 1.0 - 0.02, $"zero step measured after the lead-in ({tl:F2} s)");
 
+        // nullCAT status
+        var ns = NullcatStatus.FromJson("{\"ts\":1,\"loopRunning\":true,\"estopTripped\":false,\"needsRehome\":false,\"homing\":false,\"parked\":true,\"telemetryReceiving\":false}", 1);
+        Check(ns.Reachable && ns.Parked && ns.Blocker() == null && ns.Describe().Contains("PARKED"), "nullCAT parked status");
+        ns = NullcatStatus.FromJson("{\"loopRunning\":true,\"estopTripped\":true,\"parked\":true}", 1);
+        Check(ns.Blocker() != null && ns.Blocker().Contains("e-stop"), "nullCAT e-stop blocks");
+        ns = NullcatStatus.FromJson("{\"loopRunning\":true,\"parked\":false}", 1);
+        Check(!ns.Parked && ns.Blocker() == null && ns.Describe().Contains("ONLINE"), "nullCAT online status");
+        Check(NullcatStatus.Unreachable("timeout", 1).Blocker() == null, "unreachable nullCAT blocks nothing");
+
         // brief stillness shorter than settle + average never completes a check
         var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;
         pm2.ReferenceLearned += (p, r) => c2++;

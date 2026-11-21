@@ -16,7 +16,7 @@ namespace SimSpares.AdaptiveMotion
         private readonly List<Action> _setupRefresh = new List<Action>();
         private TabControl _tabs;
         private TabItem _verifyTab;
-        private TextBlock _vBlockers, _vFindings;
+        private TextBlock _vBlockers, _vFindings, _vNullcat;
         private Button _vRun, _vStop, _vRange;
 
         private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0x3F, 0xB9, 0x50));
@@ -127,7 +127,7 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Step("5. Neutral, level and driver offset (game closed)",
                 () =>
                 {
-                    if (_p.CentreRunning) return Todo(_p.CentreStatus);
+                    if (_p.CentreRunning) return Todo(_p.CentreStatus + (_p.NullcatLine != null ? "  (" + _p.NullcatLine + ")" : ""));
                     if (s.Neutral == null && !s.LevelCaptured) return Todo("Set the neutral (Use centre), then capture the level with the rig empty.");
                     if (s.Neutral == null) return Todo("Set the neutral: press Use centre.");
                     if (!s.LevelCaptured) return Todo("Capture the level with the rig EMPTY.");
@@ -268,9 +268,12 @@ namespace SimSpares.AdaptiveMotion
             var opts = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
             opts.Children.Add(Inline("Speed (deg/s)", Num(o.RampDps, v => { o.RampDps = Math.Max(0.5, Math.Min(15, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Tolerance (%)", Num(o.TolPct, v => { o.TolPct = Math.Max(1, Math.Min(20, v)); _p.SaveSettings(); })));
+            opts.Children.Add(Inline("Unpark nullCAT automatically (after the safety check)", Check(s.NullcatAutoUnpark, v => { s.NullcatAutoUnpark = v; _p.SaveSettings(); })));
             opts.Children.Add(Inline("Hold at centre after test (s)", Num(o.HoldSec, v => { o.HoldSec = Math.Max(0, Math.Min(60, v)); _p.SaveSettings(); })));
             opts.Children.Add(Inline("Min tolerance (deg)", Num(o.TolMinDeg, v => { o.TolMinDeg = Math.Max(0.1, Math.Min(2, v)); _p.SaveSettings(); })));
             top.Children.Add(opts);
+            _vNullcat = new TextBlock { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 4, 0, 0) };
+            top.Children.Add(_vNullcat);
             _vBlockers = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = TodoBrush, Margin = new Thickness(0, 4, 0, 4) };
             top.Children.Add(_vBlockers);
             DockPanel.SetDock(top, Dock.Top);
@@ -327,6 +330,13 @@ namespace SimSpares.AdaptiveMotion
             var blockers = running ? new List<string>() : _p.VerifyBlockers();
             string bt = blockers.Count == 0 ? "" : "Before the test can run: " + string.Join("; ", blockers) + ".";
             if (_vBlockers.Text != bt) _vBlockers.Text = bt;
+            string nl = _p.NullcatLine ?? "";
+            if (_vNullcat.Text != nl)
+            {
+                _vNullcat.Text = nl;
+                var st = _p.Nullcat.Status;
+                _vNullcat.Foreground = !st.Reachable ? TodoBrush : st.Blocker() != null ? BadBrush : st.Parked ? TodoBrush : OkBrush;
+            }
             var run = _p.RunForDisplay;
             var findings = run != null && run.Done ? run.Findings() : !running && _p.Settings.LastVerification != null ? _p.Settings.LastVerification.Findings : null;
             string ft = findings == null ? (running ? "Test running. Stop returns the rig to centre." : "") : string.Join("\n", findings.Select(f => "• " + f));

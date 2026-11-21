@@ -129,6 +129,10 @@ namespace SimSpares.AdaptiveMotion
             root.Children.Add(Row("Listen port (point SimHub here, 127.0.0.1)", IntBox(s.ProxyListenPort, v => s.ProxyListenPort = v)));
             root.Children.Add(Row("Controller host", Txt(s.ProxyTargetHost, v => s.ProxyTargetHost = v)));
             root.Children.Add(Row("Controller port", IntBox(s.ProxyTargetPort, v => s.ProxyTargetPort = v)));
+            root.Children.Add(Row("nullCAT web API: read status", Check(s.NullcatApiEnabled, v => s.NullcatApiEnabled = v)));
+            root.Children.Add(Row("nullCAT web host (empty = controller host)", Txt(s.NullcatHost, v => s.NullcatHost = v)));
+            root.Children.Add(Row("nullCAT web port", IntBox(s.NullcatPort, v => s.NullcatPort = v)));
+            root.Children.Add(Row("Unpark nullCAT automatically (test / centre capture)", Check(s.NullcatAutoUnpark, v => s.NullcatAutoUnpark = v)));
             root.Children.Add(Row("Text command (e.g. NULLCAT,<Axis1>,<Axis2>,…)", Check(pk.Text, v => pk.Text = v)));
             root.Children.Add(Row("  text: fixed first field (e.g. NULLCAT)", Txt(pk.TextPrefix, v => pk.TextPrefix = v)));
             root.Children.Add(Row("  text: values in hexadecimal", Check(pk.TextHex, v => pk.TextHex = v)));

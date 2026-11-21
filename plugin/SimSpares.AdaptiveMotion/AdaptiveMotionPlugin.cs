@@ -23,6 +23,7 @@ namespace SimSpares.AdaptiveMotion
         // --- components -----------------------------------------------------------------------
         internal readonly ImuSerialLink Imu = new ImuSerialLink();
         internal readonly UdpMotionProxy Proxy = new UdpMotionProxy();
+        internal readonly NullcatClient Nullcat = new NullcatClient();
         internal readonly PlatformEstimator Estimator = new PlatformEstimator();
         internal AdaptiveGainController Controller;
         internal readonly LagEstimator PitchTracking = new LagEstimator();
@@ -81,6 +82,10 @@ namespace SimSpares.AdaptiveMotion
             Settings = this.ReadCommonSettings<AdaptiveMotionSettings>("GeneralSettings", () => new AdaptiveMotionSettings());
             Settings.Verify.MaxFractionPct = 50;   // every SimHub start: the test begins in half motion
             Controller = new AdaptiveGainController(Settings.Controller);
+            Nullcat.Host = () => Settings.NullcatApiEnabled ? (string.IsNullOrWhiteSpace(Settings.NullcatHost) ? Settings.ProxyTargetHost : Settings.NullcatHost) : null;
+            Nullcat.Port = () => Settings.NullcatPort > 0 ? Settings.NullcatPort : 8080;
+            Nullcat.Log = m => Note(m);
+            Nullcat.Start();
             Park = new ParkMonitor(Settings.Park);
             if (Settings.ParkReferenceLearned) Park.SetReference(Settings.ParkPitchDeg, Settings.ParkRollDeg);
             if (Settings.ParkReferenceLearned && Settings.ParkSeatedLearned) Park.SetSeatedReference(Settings.ParkSeatedPitchDeg, Settings.ParkSeatedRollDeg);
@@ -219,6 +224,14 @@ namespace SimSpares.AdaptiveMotion
             else if (!double.IsNaN(Proxy.LastSimHubSec) && ImuSerialLink.NowSec - Proxy.LastSimHubSec < 1)
                 b.Add("SimHub is sending motion right now: stop the game / motion test so only the test drives the rig");
             if (s.Neutral == null) b.Add("set the neutral (Setup step 5: Use centre)");
+            var nc = Nullcat.Status;
+            if (s.NullcatApiEnabled && nc.Reachable)
+            {
+                string nb = nc.Blocker();
+                if (nb != null) b.Add(nb);
+                else if (nc.Parked && !s.NullcatAutoUnpark && !Verifying && !CentreRunning)
+                    b.Add("nullCAT is parked: unpark it (Stream Deck) and start within 15 s, or tick 'Unpark nullCAT automatically'");
+            }
             if (_gameRunning) b.Add("stop the game: the test only runs with the game closed or idle in the menu");
             if (!centreRun && geo == null && s.Neutral != null && s.Neutral.Length >= s.Rig.Count)
             {
@@ -237,6 +250,7 @@ namespace SimSpares.AdaptiveMotion
         {
             var blockers = VerifyBlockers();
             if (blockers.Count > 0) { why = string.Join("; ", blockers); return false; }
+            if (!UnparkIfNeeded(out why)) return false;
             try
             {
                 lock (VerifyLock)
@@ -273,6 +287,7 @@ namespace SimSpares.AdaptiveMotion
         private bool _centreDriver;
         private double[] _centreValues;
         public bool CentreRunning => _centrePhase != 0;
+        public string NullcatLine => Settings.NullcatApiEnabled ? Nullcat.Status.Describe() : null;
         public string CentreStatus
         {
             get
@@ -293,10 +308,26 @@ namespace SimSpares.AdaptiveMotion
             return b;
         }
 
+        /// <summary>If enabled and nullCAT is parked: unpark it (only called right after the user confirmed the safety dialog).</summary>
+        private bool UnparkIfNeeded(out string why)
+        {
+            why = null;
+            if (!Settings.NullcatApiEnabled || !Settings.NullcatAutoUnpark) return true;
+            var st = Nullcat.Poll();
+            if (!st.Reachable || !st.Parked) return true;
+            if (st.Blocker() != null) { why = st.Blocker(); return false; }
+            why = Nullcat.Unpark();
+            if (why != null) return false;
+            LogEvent("NULLCAT UNPARK");
+            Note("nullCAT: unpark requested by the plugin (after the safety check)");
+            return true;
+        }
+
         public bool StartCentreCapture(bool driver, out string why)
         {
             var b = CentreBlockers(driver);
             if (b.Count > 0) { why = string.Join("; ", b); return false; }
+            if (!UnparkIfNeeded(out why)) return false;
             _centreDriver = driver;
             _centreValues = (double[])Settings.Neutral.Clone();
             _centreT0 = ImuSerialLink.NowSec; _centrePhaseT = double.NaN; _stillSince = double.NaN;
@@ -769,6 +800,7 @@ namespace SimSpares.AdaptiveMotion
             Proxy.EndOverride();
             Logger.Stop();
             Proxy.Stop();
+            Nullcat.Stop();
             Imu.Stop();
             SaveSettings();
         }

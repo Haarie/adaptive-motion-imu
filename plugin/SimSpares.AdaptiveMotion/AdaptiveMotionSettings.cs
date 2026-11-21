@@ -53,6 +53,12 @@ namespace SimSpares.AdaptiveMotion
         public int ProxyListenPort = 33740;
         public string ProxyTargetHost = "nullcat.local";
         public int ProxyTargetPort = 0;          // set to the port SimHub used to send to directly
+
+        // --- nullCAT web API (status, optional unpark) ----------------------------------------
+        public bool NullcatApiEnabled = true;    // read /api/status (read-only)
+        public string NullcatHost = "";          // empty = the controller address above
+        public int NullcatPort = 8080;
+        public bool NullcatAutoUnpark = false;   // send /api/unpark when a test or centre capture starts (after the safety dialog)
         public PacketLayout Packet = new PacketLayout();
         public ActuatorLayout Actuators = ActuatorLayout.GlobalOnly;
         public double[] Neutral = null;          // captured rest values; null = mid-scale
