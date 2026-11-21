@@ -70,8 +70,8 @@ namespace SimSpares.AdaptiveMotion
         {
             var w = NewWindow(owner, driver ? "DRIVER OFFSET" : "LEVEL AT CENTRE", driver ? "YOU IN THE SEAT" : "RIG EMPTY", driver ? Accent : Safety, out var body, out var buttons);
             body.Children.Add(Para(driver
-                ? "The plugin moves the rig to its centre (the position SimHub uses for zero), waits until it stands still and measures how much your weight tilts the seat. The rig does not move beyond its centre."
-                : "The plugin moves the rig out of park to its centre (the position SimHub uses for zero), waits until it stands still and captures the level there.", Ink, 0, 0, 0, 12));
+                ? "The plugin brings the rig out of park: rig active at its centre (not parked), the position SimHub uses for zero. It waits until the rig stands still and measures how much your weight tilts the seat. The rig does not move beyond its centre."
+                : "The plugin brings the rig out of park: rig active at its centre (not parked), the position SimHub uses for zero. It waits until the controller is online and the rig stands still, then captures the level there.", Ink, 0, 0, 0, 12));
             var safety = new StackPanel();
             safety.Children.Add(new TextBlock { Text = "⚠  SAFETY CHECK", FontFamily = Head, FontWeight = FontWeights.Bold, FontSize = 17, Foreground = Safety, Margin = new Thickness(0, 0, 0, 6) });
             var checks = driver
@@ -80,7 +80,7 @@ namespace SimSpares.AdaptiveMotion
             foreach (var c in checks) safety.Children.Add(c);
             body.Children.Add(new Border { Child = safety, Background = Card, BorderBrush = Safety, BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(2), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 0, 0, 12) });
             body.Children.Add(Para(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "Takes about 6–10 s. Afterwards the rig holds at centre for {0:F0} s, then the controller parks it. Stop ends it at any time without saving.", holdSec), Muted, 0, 0, 0, 0));
+                "Takes about 10–15 s (the controller unparks first). Afterwards the rig holds at centre for {0:F0} s, then the controller parks it. Stop ends it at any time without saving.", holdSec), Muted, 0, 0, 0, 0));
             var cancel = MakeButton("CANCEL", false);
             var start = MakeButton(driver ? "CAPTURE OFFSET" : "CAPTURE LEVEL", true);
             start.IsEnabled = false;

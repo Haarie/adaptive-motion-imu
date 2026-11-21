@@ -304,7 +304,7 @@ namespace SimSpares.AdaptiveMotion
             Proxy.BeginOverride(() => _centreValues);
             LogEvent(driver ? "CENTRE CAPTURE DRIVER" : "CENTRE CAPTURE LEVEL");
             Note(driver ? "Driver offset: moving the rig to its centre; sit still in your driving position"
-                        : "Level: moving the rig to its centre; keep the rig EMPTY and clear");
+                        : "Level: moving the rig out of park to its centre (rig active at its centre, not parked); keep the rig EMPTY and clear");
             why = null;
             return true;
         }
@@ -325,16 +325,17 @@ namespace SimSpares.AdaptiveMotion
                     bool still = (st.Flags & ImuFlags.Still) != 0;
                     if (!still) _stillSince = double.NaN;
                     else if (double.IsNaN(_stillSince)) _stillSince = now;
-                    if (now - _centreT0 >= 3 && !double.IsNaN(_stillSince) && now - _stillSince >= 1.0)
+                    // the controller first unparks and blends in (nullCAT: 3 s + 2 s), then the rig must stand still
+                    if (now - _centreT0 >= Settings.Verify.LeadInSec && !double.IsNaN(_stillSince) && now - _stillSince >= 1.5)
                     {
                         _levelIsDriver = _centreDriver;
                         _levelSumP = _levelSumR = 0; _levelN = 0;
                         _levelUntil = now + 1.5;
                         _centrePhase = 2;
                     }
-                    else if (now - _centreT0 > 20)
+                    else if (now - _centreT0 > Settings.Verify.LeadInSec + 15)
                     {
-                        Note("Centre capture stopped: the rig did not stand still within 20 s (nothing saved)");
+                        Note("Centre capture stopped: the rig did not stand still at its centre in time (nothing saved)");
                         _centrePhase = 4;
                     }
                     break;
@@ -681,7 +682,7 @@ namespace SimSpares.AdaptiveMotion
                 if (Math.Abs(dp) > 3 || Math.Abs(dr) > 3)
                 {
                     Note(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                        "Driver offset not saved: the seat is {0:F2}° pitch / {1:F2}° roll off the level, more than a driver's weight explains. Is the rig at its centre position?", dp, dr));
+                        "Driver offset not saved: the seat is {0:F2}° pitch / {1:F2}° roll off the level, more than a driver's weight explains. Is the rig active at its centre (not parked)?", dp, dr));
                     return;
                 }
                 Settings.DriverOffsetCaptured = true; Settings.DriverOffsetPitchDeg = dp; Settings.DriverOffsetRollDeg = dr;
@@ -904,23 +905,23 @@ namespace SimSpares.AdaptiveMotion
 
         public void StartLevelCapture()
         {
-            if (_gameRunning) { Note("Close the game first: the level is captured with the rig empty and at its centre"); return; }
+            if (_gameRunning) { Note("Close the game first: the level is captured with the rig empty, rig active at its centre (not parked)"); return; }
             _levelIsDriver = false;
             _levelSumP = _levelSumR = 0; _levelN = 0;
             _levelUntil = ImuSerialLink.NowSec + 1.5;
-            Note("Capturing level for 1.5 s: rig EMPTY and active at its centre (not parked)");
+            Note("Capturing level for 1.5 s: rig EMPTY, rig active at its centre (not parked)");
         }
 
         /// <summary>Driver in the seat, rig at its centre, no game: the seat attitude relative to the level becomes the driver offset.</summary>
         public void StartDriverOffsetCapture()
         {
             if (!Settings.LevelCaptured) { Note("Capture the level (rig empty) first"); return; }
-            if (_gameRunning) { Note("Close the game first: the driver offset is captured with the rig at its centre"); return; }
+            if (_gameRunning) { Note("Close the game first: the driver offset is captured with the rig active at its centre (not parked)"); return; }
             if (Verifying) { Note("Not during the verification test"); return; }
             _levelIsDriver = true;
             _levelSumP = _levelSumR = 0; _levelN = 0;
             _levelUntil = ImuSerialLink.NowSec + 1.5;
-            Note("Capturing the driver offset for 1.5 s: sit still in your normal driving position");
+            Note("Capturing the driver offset for 1.5 s: rig active at its centre (not parked), sit still in your normal driving position");
         }
 
         public void ClearDriverOffset()

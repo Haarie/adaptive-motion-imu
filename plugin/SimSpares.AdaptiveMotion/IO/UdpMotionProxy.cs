@@ -28,6 +28,7 @@ namespace SimSpares.AdaptiveMotion.IO
         public double LastPacketSec { get; private set; } = double.NaN;
         /// <summary>When SimHub itself last sent a packet (test packets from the plugin not counted).</summary>
         public double LastSimHubSec { get; private set; } = double.NaN;
+        private bool _dither;
         public MotionPacketTransformer Transformer => _xf;
         public bool Running => _run;
 
@@ -84,6 +85,15 @@ namespace SimSpares.AdaptiveMotion.IO
                     var axes = f();
                     if (axes != null)
                     {
+                        // Keep-alive: some controllers (nullCAT) only unpark / stay online on CHANGING data;
+                        // a constant pose counts as stale. Alternate one count (≈3 µm on a 200 mm stroke).
+                        _dither = !_dither;
+                        if (_dither)
+                        {
+                            axes = (double[])axes.Clone();
+                            double max = _xf.Layout.MaxValue;
+                            for (int i = 0; i < axes.Length; i++) axes[i] = axes[i] + 1 <= max ? axes[i] + 1 : axes[i] - 1;
+                        }
                         byte[] pkt;
                         lock (_tplLock) pkt = MotionPacketCodec.Build(_xf.Layout, axes, _template, _template.Length);
                         lock (_sendLock) _tx.Send(pkt, pkt.Length, _target);

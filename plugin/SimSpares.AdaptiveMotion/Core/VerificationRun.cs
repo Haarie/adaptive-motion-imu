@@ -24,6 +24,7 @@ namespace SimSpares.AdaptiveMotion.Core
         public double AbortOvershootDeg = 3;           // abort when the seat goes this far past the limit
         public double AbortWrongWayDeg = 2;            // abort when the seat moves this far the WRONG way
         public double HoldSec = 5;                     // keep the rig at centre this long after the test, then hand it back
+        public double LeadInSec = 6;                   // controller unpark + blend into live data before the first measurement (nullCAT: 3 s + 2 s)
 
         public VerifyOptions Clone() { var o = (VerifyOptions)MemberwiseClone(); o.Fractions = (double[])Fractions.Clone(); return o; }
     }
@@ -126,7 +127,7 @@ namespace SimSpares.AdaptiveMotion.Core
                     if (RampTo(tp, tr, dt)) Begin(VerifyPhase.Settling, nowSec);
                     break;
                 case VerifyPhase.Settling:
-                    if (nowSec - _phaseStart >= Options.SettleSec) { _sumMain = _sumCross = 0; _n = 0; Begin(VerifyPhase.Measuring, nowSec); }
+                    if (nowSec - _phaseStart >= Options.SettleSec + (Index == 0 ? Options.LeadInSec : 0)) { _sumMain = _sumCross = 0; _n = 0; Begin(VerifyPhase.Measuring, nowSec); }
                     break;
                 case VerifyPhase.Measuring:
                     _sumMain += st.Axis == VerifyAxis.Pitch ? measuredPitchDeg : measuredRollDeg;

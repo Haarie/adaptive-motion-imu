@@ -415,6 +415,11 @@ static class CoreTests
         for (int i = 0; i < 1500; i++) { t5 += 0.004; pm5.Update(new PlatformState { PitchDeg = 0.1, TimeSec = t5, Flags = ImuFlags.Still }, false); }
         Check(chk5 == 1 && !pm5.MountShifted, "park check once SimHub stops sending");
 
+        // lead-in: the zero step waits for the controller to unpark and blend in before it measures
+        var vl = new VerificationRun(5, 5, new VerifyOptions { LeadInSec = 6 }); double tl = 0;
+        while (vl.Steps[0].Grade == VerifyGrade.Pending && tl < 30) { vl.Update(tl, 0, 0); tl += 0.01; }
+        Check(tl >= 6 + 1.5 + 1.0 - 0.02, $"zero step measured after the lead-in ({tl:F2} s)");
+
         // brief stillness shorter than settle + average never completes a check
         var pm2 = new ParkMonitor(new ParkSettings()); double t2 = 0; int c2 = 0;
         pm2.ReferenceLearned += (p, r) => c2++;

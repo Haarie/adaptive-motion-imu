@@ -65,7 +65,7 @@ namespace SimSpares.AdaptiveMotion
                 Row("Sensor axis pointing forward", EnumBox(s.MountForward, v => { s.MountForward = v; s.MountAuto = false; })),
                 Row("Sensor axis pointing up", EnumBox(s.MountUp, v => { s.MountUp = v; s.MountAuto = false; })),
                 Buttons(Btn("Save mounting", () => { _p.SaveSettings(); _p.ApplySettings(); _p.Note("Mounting saved"); }),
-                        Btn("Auto-align 1: rest (rig at centre)", () => _p.StartAlignCapture(true)),
+                        Btn("Auto-align 1: rest (rig active at its centre (not parked))", () => _p.StartAlignCapture(true)),
                         Btn("Auto-align 2: nose-up held (≥ 2°)", () => _p.StartAlignCapture(false)))));
 
             // 3 ---------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ namespace SimSpares.AdaptiveMotion
                         Btn("Clear driver offset", () => _p.ClearDriverOffset())),
                 Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
                      "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still)."),
-                Hint("Level: the plugin moves the rig to its centre (active, not parked: the position SimHub uses for zero) and captures it there, with nobody in the seat; the verification test also runs with the rig empty. " +
+                Hint("Level: the plugin brings the rig out of park, rig active at its centre (not parked), the position SimHub uses for zero, and captures it there, with nobody in the seat; the verification test also runs with the rig empty. " +
                      "Driver offset: then sit in your normal driving position and capture it the same way. Your weight tilts the seat a little; " +
                      "the plugin takes that out while a game runs, so your driving position reads 0°, and the park check knows both positions.")));
 
