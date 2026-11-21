@@ -143,6 +143,7 @@ namespace SimSpares.AdaptiveMotion
                         Btn("Capture driver offset at centre (you in the seat)", () => CentreCapture(true)),
                         Btn("Stop", () => _p.StopCentreCapture()),
                         Btn("Clear driver offset", () => _p.ClearDriverOffset())),
+                RigStateLine(),
                 Inline("Unpark nullCAT automatically (after the safety check)", AutoUnparkBox()),
                 Hint("Neutral = the actuator values for zero motion. 'Use centre' takes the middle of the output range, which is where SimHub puts the actuators at rest. " +
                      "'Capture from SimHub' only works while SimHub is sending (motion running, car standing still)."),
@@ -286,6 +287,25 @@ namespace SimSpares.AdaptiveMotion
             dock.Children.Add(_vFindings);
             dock.Children.Add(new VerifyChart(_p));
             return dock;
+        }
+
+        /// <summary>Live line: is the rig active (online) or parked, read from nullCAT. Updated with the setup refresh.</summary>
+        private FrameworkElement RigStateLine()
+        {
+            var tb = new TextBlock { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 6, 0, 2) };
+            _setupRefresh.Add(() =>
+            {
+                string t; Brush b;
+                var st = _p.Nullcat.Status;
+                if (!_p.Settings.NullcatApiEnabled) { t = "Rig: state unknown (nullCAT status is off on the Advanced tab)"; b = TodoBrush; }
+                else if (!st.Reachable) { t = "Rig: state unknown, nullCAT not reachable" + (string.IsNullOrEmpty(st.Error) ? "" : " (" + st.Error + ")"); b = TodoBrush; }
+                else if (st.Blocker() != null) { t = "Rig: " + st.Blocker(); b = BadBrush; }
+                else if (st.Parked) { t = "Rig: PARKED" + (_p.Settings.NullcatAutoUnpark ? " (the plugin will unpark it after the safety check)" : " (unpark it with the Stream Deck, or tick the box below)"); b = TodoBrush; }
+                else { t = "Rig: ACTIVE (not parked)"; b = OkBrush; }
+                if (_p.CentreRunning) t += "  ·  " + _p.CentreStatus;
+                if (tb.Text != t) { tb.Text = t; tb.Foreground = b; }
+            });
+            return tb;
         }
 
         private CheckBox AutoUnparkBox()
