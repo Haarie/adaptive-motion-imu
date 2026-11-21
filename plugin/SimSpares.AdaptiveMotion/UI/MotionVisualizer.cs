@@ -132,6 +132,15 @@ namespace SimSpares.AdaptiveMotion.UI
             // The controller only runs once the level is captured; until then say what is missing.
             string status = g.Status == ControllerStatus.WaitingForSensor && connected && !_p.Settings.LevelCaptured
                 ? "IDLE: CAPTURE LEVEL" : g.Status.ToString().ToUpperInvariant();
+            // Rig state from nullCAT's web API, in front of the controller status
+            if (_p.Settings.NullcatApiEnabled)
+            {
+                var nc = _p.Nullcat.Status;
+                if (!nc.Reachable) x = Badge(dc, "RIG ?", x, 10, Track) + 8;
+                else if (nc.EstopTripped) x = Badge(dc, "E-STOP", x, 10, Bad) + 8;
+                else if (nc.Homing || nc.NeedsRehome || !nc.LoopRunning) x = Badge(dc, nc.Homing ? "HOMING" : nc.NeedsRehome ? "NOT HOMED" : "LOOP OFF", x, 10, Bad) + 8;
+                else x = Badge(dc, nc.Parked ? "PARKED" : "ACTIVE", x, 10, nc.Parked ? Warn : Good) + 8;
+            }
             x = Badge(dc, status, x, 10, statusBrush);
             x = Badge(dc, mode, x + 8, 10, _p.ProxyActive ? Accent : Track);
             x = Badge(dc, connected ? string.Format(CultureInfo.InvariantCulture, "{0:F0} Hz", _p.FrameRate) : "NO SENSOR", x + 8, 10, connected ? Track : Bad);
