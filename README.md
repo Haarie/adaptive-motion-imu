@@ -1,7 +1,11 @@
 # AdaptiveMotionIMU
 
-Closed-loop motion for SimHub: an MPU-6050 on the seat (ProMicro nRF52840, USB-C) measures what the rig really does,
-and a SimHub plugin attenuates motion when the seat approaches limits you set.
+Closed-loop motion for SimHub: an MPU-6050 on the motion platform (ProMicro nRF52840, USB-C) measures what the rig really
+does. The SimHub plugin routes SimHub's motion packets through itself, verifies that the rig follows SimHub's commands
+(commanded vs measured, rig empty), and once verified attenuates motion when the platform approaches SimHub's limits.
+
+Manuals (PDF): `docs/manuals/Adaptive_Motion_IMU_SimHub_Plugin_Manual.pdf` (v2.0, plugin 1.3.21) and
+`docs/manuals/Adaptive_Motion_IMU_Build_Manual.pdf` (v1.1, firmware 1.3.1).
 
 ```
 firmware/
@@ -17,10 +21,11 @@ firmware/
 plugin/SimSpares.AdaptiveMotion/
   SimSpares.AdaptiveMotion.csproj           net48, references SimHub from C:\Program Files (x86)\SimHub
   AdaptiveMotionPlugin.cs                   SimHub glue (properties, actions, events, settings)
-  SettingsControl.cs                        settings page (code-built WPF)
-  Core/                                     SimHub-independent logic (tested)
-  IO/                                       serial link + UDP proxy
-  Tests/CoreTests.cs                        65 tests
+  SettingsControl*.cs                       tabs (code-built WPF): Live view, Setup, Verify, Advanced, Update; styled dialogs; menu icon
+  Core/                                     SimHub-independent logic (tested): geometry, verification, packet codec, SimHub import, park check
+  IO/                                       serial link, UDP proxy (test override + keep-alive), nullCAT web API client, logger, updater
+  Tests/CoreTests.cs                        133 tests
+  UI/VerifyChart.cs                         verification result chart
   UI/MotionVisualizer.cs                    live view (horizon, g-g, meters, gains, 10 s trend)
   UI/VisualizerWindow.cs                    pop-out window for a second screen
 plugin/tools/check.sh                       Mono: tests + stub compile + live-view preview render: mcs -out:t.exe Tests/CoreTests.cs Core/*.cs && mono t.exe frames.bin
@@ -54,7 +59,7 @@ Keep pads 5–8 on both edges free of solder blobs: the lid ribs press on that p
 **With the Arduino IDE 2:** File → Preferences → Additional boards manager URLs:
 `https://raw.githubusercontent.com/dunknowcoding/ArduinoNRF/main/package_arduinonrf_index.json` →
 Boards Manager "ArduinoNRF" → Board **AliExpress ProMicro nRF52840** → Upload.
-Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.2.1 who=0x68 …`. LED: steady =
+Check: open the COM port at any baud with DTR on, send `INFO` → `INFO fw=1.3.1 who=0x68 …`. LED: steady =
 sensor OK + host connected, slow blink = waiting for SimHub, fast blink = no sensor (check the four wires).
 
 ## Build and install the plugin (the PC with SimHub)
@@ -65,17 +70,39 @@ sensor OK + host connected, slow blink = waiting for SimHub, fast blink = no sen
    Serial port: the board shows two COM ports; pick the one that answers (the user port, COM16 on the bench PC),
    not the maintenance port.
 
+## Setup and verification
+SimHub → Adaptive Motion → **Setup** tab, seven steps with a live status each:
+1. Connect the IMU box (data COM port). 2. Mounting direction (defaults for the side mount, or Auto-align).
+3. **Import from SimHub**: rig type, size, stroke, pitch/roll limits, UDP output and packet format from
+   `MotionPlugin.GeneralSettingsV2.json` (SimHub writes it when it closes: restart SimHub after changing motion settings).
+4. **Use UDP proxy and save**: SimHub → 127.0.0.1:33740 → plugin → controller (text `NULLCAT,<Axis1>…` or binary formats;
+   unfilled placeholders such as `<Axis10>` pass through).
+5. Neutral (**Use centre**), **Capture level at centre (rig EMPTY)**, optional **driver offset** (you seated, applied only while a
+   game runs). The plugin drives the rig out of park to its centre (rig active at its centre, not parked), waits for the controller,
+   captures, holds 5 s and hands back. Shows **Rig: ACTIVE / PARKED** from nullCAT.
+6. **Verify** tab: half (50 %) or full (100 %) motion, safety checklist dialog, poses at ±¼…±1 of SimHub's limits in pitch and roll,
+   pass within max(5 %, 0.3°), cross-talk ≤ 0.5°. Reports in `Documents\Adaptive Motion IMU\verification`. A pass is tied to a
+   fingerprint of the relevant settings. Nobody in the rig during the test.
+7. **Closed loop** (unlocked only by a valid pass). Pitch/roll limits follow SimHub's; hard trip 1.2 × limit + 1°, capped below
+   the rig's mechanical maximum.
+
+## nullCAT link
+Besides UDP (4444) the plugin reads nullCAT's web API (port 8080): `/api/status` every 2 s for the rig state (Setup step 5, Verify
+tab, live-view badge), and optionally sends `/api/unpark` after the safety dialog when a test or centre capture starts. While the
+plugin drives the rig it alternates the command by one count per packet: nullCAT only unparks / stays online on changing data.
+
 ## Live view
 SimHub → Adaptive Motion → **Live view** tab (or **Pop out window** for a second screen / the rig display):
 
 ![live view](docs/visualizer_preview.png)
 
-- **Attitude**: artificial horizon of the seat (pitch ladder, roll scale), yellow = comfort limit, red = hard trip.
+- **Attitude**: artificial horizon of the platform (pitch ladder, roll scale), yellow = limit, red = hard trip.
 - **Horizontal cue**: g-g plot of the force felt in the seat with a 2 s trail; dashed ring = cue limit.
 - **Meters**: pitch/roll rate, heave cue, vibration RMS, peak |a|−1 g (impact threshold) and the impact count.
 - **Gains**: what the controller currently applies (red line = minimum gain).
 - **Last 10 s**: pitch and roll trend against the limits.
-- Header badges: controller status, mode, sensor rate, STILL, MOUNT SHIFTED, CLONE IMU, LEVEL NOT CAPTURED.
+- Header badges: rig state (ACTIVE / PARKED / E-STOP / HOMING / RIG ?), controller status, mode, sensor rate, STILL,
+  MOUNT SHIFTED, CLONE IMU, ● REC, UPDATE.
 (The preview image is rendered off-Windows through an SVG stand-in, so fonts differ slightly from SimHub.)
 
 ## Data logging
@@ -83,15 +110,16 @@ Settings → **Data logging (CSV)**: pick a folder (**Browse…**, default `Docu
 (1–250), optional auto start/stop with the game, optional game data (speed, gear, rpm, game accelerations).
 **Start log / Stop log** on the Settings page or the Live-view bar, or actions `LogStart` / `LogStop` / `LogToggle`.
 One file per session, `AMIMU_<date>_<time>_<game>_<car>_<track>.csv`, `#` header lines with firmware, mode and limits,
-then one row per sample (tilt, rates, cue, gains, status, limit usage, commands, game data) and event rows
-(TRIP, IMPACT, messages). Written on a background thread: the IMU loop never waits for the disk.
+then one row per sample (tilt, rates, cue, gains, status, limit usage, commands in degrees, game data, IMU temperature) and
+event rows (TRIP, IMPACT, messages). `level_history.csv` records every level capture and park check with the raw sensor tilt and
+the IMU temperature. Written on a background thread: the IMU loop never waits for the disk.
 
 ## Updates
 SimHub → Adaptive Motion → **Update** tab: installed vs latest plugin and firmware, release notes, *Download and install*
 (UAC prompt, SimHub closes, the DLL is swapped by a helper and SimHub restarts; previous DLL kept for *Roll back*) and
 *Update firmware* (box → UF2 bootloader via `BOOTLOADER`, fw ≥ 1.3.1; older: double-tap RST; copy, reconnect, verify).
-Channel: `updates/stable/manifest.json` (beta: `updates/beta/`) on `main` of this public repo, read from
-raw.githubusercontent.com; files are SHA-256 checked. Publish: `NET48=… SIMHUB=… tools/make_release.sh <ver> notes.md`,
+Channel: `updates/stable/manifest.json` (beta: `updates/beta/`) on `main` of this public repo, read through the GitHub
+contents API (falls back to raw.githubusercontent.com); files are SHA-256 checked. Publish: `NET48=… SIMHUB=… tools/make_release.sh <ver> notes.md`,
 then commit + push `updates/`. `plugin/tools/build_release.sh` compiles the DLL against the real SimHub and .NET 4.8
 reference assemblies with Mono (no Windows needed).
 
@@ -101,7 +129,7 @@ its vertical side face; a 6 mm flange along the box's long side carries two M6 b
 both in that face's horizontal slot. The box sits beside the slot (above it, or below it if you flip it).
 Hardware: 2 × M6 × 16 DIN 912 + washers, 2 × M6 slot-8 T-nuts. Print `base.stl` (side), or
 `base_across.stl` (box across a vertical upright) / `base_along.stl` (ears at the ends) for other mounts.
-The box does not have to be square to the rig: use **Auto-align** (below).
+Mount it on the moving **platform frame**, not on the seat. The box does not have to be square to the rig: use **Auto-align** (below).
 
 ![render](docs/enclosure_render.png)
 
@@ -129,15 +157,16 @@ only happen in the first three layers. Use 0.2 mm first layer and "Arachne" peri
   whenever the box is re-mounted. The manual axis pickers remain for square mounts.
 - **Gyro bias** is learned automatically by the firmware whenever the rig is still for 2 s (AUTOCAL, on by default),
   so it follows the sensor as it warms up. `GyroCalibrate` remains for a forced 2 s calibration.
-- **Level** is captured once, with the rig at its *centre* position (`CaptureLevel`) — never automatically,
-  because the park position is not necessarily level.
-- **Park check**: when no game runs and the rig is still, the plugin averages the parked pose and compares it with
-  the pose learned at the first park. A difference above 0.5° raises the `MountShifted` event / `Park.MountShifted`
-  property (IMU box moved, or the rig homed/parked elsewhere). It warns only. `RelearnParkPose` after re-mounting.
+- **Level** is captured with the rig *active at its centre (not parked)* and empty, via **Capture level at centre** (the plugin
+  moves the rig there). The driver offset is captured the same way with the driver seated.
+- **Park check**: when nothing commands motion and the rig is still, the plugin averages the pose and compares it with the
+  learned park pose (and park pose + driver offset). Above 0.5° it raises `MountShifted` / `Park.MountShifted`. It warns only.
+  nullCAT's homing repeats within ~0.2 mm, so a shift means the box/sensor moved: see `level_history.csv` (temperature).
 
 ## Safety
 The plugin only ever attenuates (gains in [MinGain, 1]) and never moves an actuator further from neutral than
 SimHub's own packet did. It is NOT a safety system: keep the hardware e-stop and verify nullCAT parks on
-UDP loss before using the proxy.
+UDP loss before using the proxy. During the verification test and centre captures the plugin drives the rig itself:
+nobody in the seat for the test, nobody within reach, e-stop within reach.
 
 See the design doc for the full investigation, control law and bring-up plan.

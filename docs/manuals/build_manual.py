@@ -160,7 +160,7 @@ body += [PageBreak(), H1("7  Bench test and calibration"),
     H2("7.1  Quick check"),
     code("powershell -ExecutionPolicy Bypass -File imu_check.ps1 -Port COM16"),
     table([["Line", "Good result (bench values)"],
-           ["device: INFO", "fw=1.3.0 who=0x68 out=250 dlpf=3 cal=1 auto=1"],
+           ["device: INFO", "fw=1.3.1 who=0x68 out=250 dlpf=3 cal=1 auto=1"],
            ["IMU frames", "about 250/s, CRC errors 0"],
            ["|a| at rest", "OK (about 1.00 g once calibrated)"],
            ["flags", "gyro-calibrated, and 'still' after the box lies still for 2 s"]],
@@ -194,7 +194,10 @@ body += [PageBreak(), H1("8  Mount on the rig"),
            "Fit the <b>M6 x 16</b> bolts with washers and tighten. The slots give +-3 mm play to line up with the T-nuts.",
            "Run the USB-C cable to the SimHub PC and fix it to the cable-tie tab and the frame. Use the same USB port on the PC every time "
            "so the COM number stays the same.",
-           "Continue in the <b>plugin manual</b>: capture the level with the rig at centre, then learn the parked pose."]),
+           "Continue in the <b>plugin manual</b>: the Setup tab (import from SimHub, route the motion output, capture the level at centre "
+           "with the rig empty) and the verification test."]),
+    callout("warn", "On the platform, not on the seat", "Bolt the box to the moving platform frame. A seat, seat slider or bracket that "
+            "can move a few millimetres shows up as a tilt and as MOUNT SHIFTED in the plugin."),
     AxesDiagram(),
     P("The box doesn't have to be perfectly square: the plugin's <b>Auto-align</b> works out the axes from two short captures. "
       "With the box mounted as above, the defaults (forward = +Z, up = +X) are already right.", "small"),
@@ -216,14 +219,15 @@ body += [PageBreak(), H1("9  Troubleshooting"),
 ]
 
 # 10 Reference
-body += [H1("10  Reference"), H2("Serial commands (data port, one per line)"),
+body += [PageBreak(), H1("10  Reference"), H2("Serial commands (data port, one per line)"),
     table([["Command", "Effect"],
            ["PING", "PONG"],
            ["INFO", "firmware version, sensor ID, output rate, filter, calibration state"],
            ["BIAS", "gyro zero point (0.001 deg/s), number of updates since boot, still flag"],
            ["GYROCAL", "forced 2 s gyro calibration (rig must be still)"],
            ["AUTOCAL 0 / 1", "background gyro learning off / on (default on)"],
-           ["DIAG", "temperature, raw accel (mg) and gyro (mdps) means, learned resting |a|"],
+           ["DIAG", "temperature, raw accel (mg) and gyro (mdps) means, learned resting |a|; the plugin polls it for the temperature"],
+           ["BOOTLOADER", "UF2 bootloader (plugin firmware update)"],
            ["ACC / ACCCAL ...", "show / set the accelerometer calibration (ACCCAL 0 removes it)"],
            ["DLPF n / ODR n", "sensor low-pass 0..6 (default 3) / output divider (default 2 = 250 Hz)"],
            ["STREAM 0 / 1, DEFAULTS, REBOOT", "pause/resume frames, factory settings, restart"]],
@@ -239,6 +243,6 @@ body += [H1("10  Reference"), H2("Serial commands (data port, one per line)"),
 ]
 
 doc = ManualDoc(OUT, "Adaptive Motion IMU\nBuild Manual", "Sensor box: print, wire, flash, calibrate, mount",
-                "Build manual v1.0 · firmware 1.3.0 · November 2026", "Sim racing motion · closed loop")
+                "Build manual v1.1 · firmware 1.3.1 · plugin 1.3.21 · November 2026", "Sim racing motion · closed loop")
 doc.build(story + start(body))
 print("wrote", OUT)
