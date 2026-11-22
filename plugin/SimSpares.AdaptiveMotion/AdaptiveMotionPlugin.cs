@@ -48,6 +48,9 @@ namespace SimSpares.AdaptiveMotion
         private volatile string _deviceInfo = "";
         private volatile string _lastMessage = "";
         private volatile float _cmdPitch, _cmdRoll;
+        private double _imuTempC = double.NaN;          // MPU die temperature from DIAG (polled every 10 s)
+        private double _nextDiagSec;
+        public double ImuTempC => _imuTempC;
 
         // level capture
         private double _levelUntil = double.NaN, _levelSumP, _levelSumR; private int _levelN;
@@ -102,9 +105,11 @@ namespace SimSpares.AdaptiveMotion
                 SyncSeatedParkReference();
                 SaveSettings();
                 Note(string.Format("Parked pose learned: pitch {0:F2}°, roll {1:F2}°", p, r));
+                LevelHistory("park pose learned", p, r);
             };
             Park.Checked += (dev, shifted) =>
             {
+                LevelHistory(shifted ? "park check: SHIFTED" : "park check: ok", Park.LastPitchDeg, Park.LastRollDeg);
                 if (shifted) { Note(string.Format("MOUNT SHIFTED? Parked pose is {0:F2}° off the reference", dev)); this.TriggerEvent("MountShifted"); }
                 this.TriggerEvent("ParkChecked");
             };
@@ -118,7 +123,19 @@ namespace SimSpares.AdaptiveMotion
                     // keep the firmware's auto-calibration in line with the setting after every (re)connect
                     if (t.Contains("auto=") && t.Contains("auto=1") != Settings.AutoGyroCal) Imu.Send("AUTOCAL " + (Settings.AutoGyroCal ? "1" : "0"));
                 }
-                Note("Device: " + t);
+                if (t.StartsWith("DIAG"))
+                {
+                    // DIAG T=<0.1 degC> a=... : only the temperature is used; not written to the SimHub log (every 10 s)
+                    int i = t.IndexOf("T=", StringComparison.Ordinal);
+                    if (i >= 0)
+                    {
+                        int j = i + 2; while (j < t.Length && (char.IsDigit(t[j]) || t[j] == '-')) j++;
+                        if (int.TryParse(t.Substring(i + 2, j - i - 2), out int tt)) _imuTempC = tt / 10.0;
+                    }
+                    return;
+                }
+                if (t.StartsWith("ACC")) Note("Device accelerometer calibration: " + t);
+                else Note("Device: " + t);
             };
             Imu.Log += Note;
             Proxy.Log += Note;
@@ -639,6 +656,30 @@ namespace SimSpares.AdaptiveMotion
             ApplyRigLimitsToController();
         }
 
+        /// <summary>
+        /// Documents\Adaptive Motion IMU\level_history.csv: every level capture and park check with the raw sensor
+        /// attitude and the IMU temperature, to tell a sensor drift (follows temperature) from a mechanical one.
+        /// rel = relative to the current level; raw = what the sensor reads (rel + level).
+        /// </summary>
+        private void LevelHistory(string what, double relPitch, double relRoll)
+        {
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Adaptive Motion IMU");
+                System.IO.Directory.CreateDirectory(dir);
+                string f = System.IO.Path.Combine(dir, "level_history.csv");
+                bool head = !System.IO.File.Exists(f);
+                string line = string.Format(inv, "{0:yyyy-MM-dd HH:mm:ss},{1},{2:F3},{3:F3},{4:F3},{5:F3},{6},{7:F3},{8:F3}",
+                    DateTime.Now, what, relPitch + Settings.LevelPitchDeg, relRoll + Settings.LevelRollDeg, relPitch, relRoll,
+                    double.IsNaN(_imuTempC) ? "" : _imuTempC.ToString("F1", inv), Settings.LevelPitchDeg, Settings.LevelRollDeg);
+                lock (_historyLock)
+                    System.IO.File.AppendAllText(f, (head ? "time,event,raw_pitch_deg,raw_roll_deg,rel_pitch_deg,rel_roll_deg,imu_temp_c,level_pitch_deg,level_roll_deg\r\n" : "") + line + "\r\n");
+            }
+            catch (Exception e) { Note("level history: " + e.Message); }
+        }
+        private readonly object _historyLock = new object();
+
         public void ApplyRigLimitsToController()
         {
             var r = Settings.Rig; var c = Settings.Controller;
@@ -736,6 +777,7 @@ namespace SimSpares.AdaptiveMotion
                 SyncSeatedParkReference();
                 SaveSettings();
                 Note(string.Format("Level captured: pitch {0:F2}°, roll {1:F2}°", Settings.LevelPitchDeg, Settings.LevelRollDeg));
+                LevelHistory("level captured", 0, 0);
             }
             else Note("Level capture failed: no IMU data");
             _levelUntil = double.NaN;
@@ -756,6 +798,13 @@ namespace SimSpares.AdaptiveMotion
             if (Verifying && !Proxy.Running) { lock (VerifyLock) { _lastRun = _verifyRun; _verifyRun = null; } Note("Verification stopped: the proxy stopped"); }
             FinishVerificationIfDone();
             FinishCentreIfDone();
+            double tnow = ImuSerialLink.NowSec;
+            if (Imu.Connected && tnow >= _nextDiagSec)
+            {
+                if (_nextDiagSec == 0) Imu.Send("ACC");   // once after start: is an accelerometer calibration stored?
+                _nextDiagSec = tnow + 10;
+                Imu.Send("DIAG");
+            }
             NoteUnknownPackets();
             SaveTemplateOnce();
             if (Settings.LogAutoStart)
@@ -1005,7 +1054,7 @@ namespace SimSpares.AdaptiveMotion
             "cue_surge_g", "cue_sway_g", "cue_heave_g", "lin_surge_g", "lin_sway_g", "lin_heave_g",
             "peak_g", "vib_rms_g", "flags", "gain_global", "gain_pitch", "gain_roll", "gain_heave", "status",
             "level_global", "level_pitch", "level_roll", "level_heave", "applying", "cmd_pitch", "cmd_roll",
-            "cmd_pitch_deg", "cmd_roll_deg", "game_running", "speed_kmh", "gear", "rpm", "game_accel_surge", "game_accel_sway", "game_accel_heave", "event"
+            "cmd_pitch_deg", "cmd_roll_deg", "game_running", "speed_kmh", "gear", "rpm", "game_accel_surge", "game_accel_sway", "game_accel_heave", "imu_temp_c", "event"
         };
 
         public void StartLog()
@@ -1069,6 +1118,8 @@ namespace SimSpares.AdaptiveMotion
                 n(_gSurge, "F3"); n(_gSway, "F3"); n(_gHeave, "F3");
             }
             else sb.Append(",,,,,,");
+            if (!double.IsNaN(_imuTempC)) sb.Append(_imuTempC.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(',');
             if (evt != null) sb.Append('"').Append(evt).Append('"');
             return sb.ToString();
         }
